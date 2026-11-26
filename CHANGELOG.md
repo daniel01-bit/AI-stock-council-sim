@@ -18,6 +18,14 @@ All notable additions, structural choices, and environment adaptations for **Sto
 ## [v2.1.0] — 2026-11-26 (Standalone Behavioral Finance Research Lab)
 
 ### Added & Upgraded
+- **429 Free-Tier Rate-Limit & 503 High-Demand Resilience (`src/llm_client.py`, `app.py`):**
+  - Added `_extract_retry_delay_seconds()` and `_is_rate_limit_error()` to honor Google's server-requested `retryDelay` on `429 RESOURCE_EXHAUSTED` (Free Tier 15 RPM) while failing fast on hard `limit: 0` models.
+  - Added automatic Gemini Flash failover chain (`DEFAULT_GEMINI_FALLBACK_MODELS`) on `GeminiLLMClient` for transient `503`/`429` spikes during Council runs, while passing `fallback_models=()` for Option B Meta-Judges so cross-model benchmarking stays strictly isolated per model.
+  - Verified live end-to-end `Run Simulation` via headless `AppTest` on `AMD` (`v2.1 Lab ON`): completed cleanly in ~42s and saved to `data/history/`.
+
+- **Quick Pick & Hot 7D Behavioral Radar (`src/stock_radar.py`, `app.py`, `config.py`):**
+  - Fixed `Settings` in `config.py` (`default_provider`, `openai_api_key`, `anthropic_api_key`, `openai_base_url`, `ollama_base_url`) so the Editorial Multi-Provider UI boots and switches tickers/providers with zero errors.
+  - Adapted `quant01`'s 4 curated stock groups (`AI & Semiconductors`, `Mega-Cap Tech`, `Value, Finance & Crypto`, `Indices & Safe-Haven`) and `Quick Pick & Hot Radar` into `MODEL-2`'s Editorial style, ranking strictly by `|7D Price Change %|` (zero technical indicators) with 1-click ticker loading into `st.session_state["ticker_input"]`.
 - **v2.0 Research Foundation (`src/schemas.py`, `src/prompts.py`, `src/orchestrator.py`):**
   - Fixed **Self-Amnesia** without breaking the Fog-of-War firewall: each agent receives ONLY its own Stage 1 numeric stance (`vote`, `confidence`, `prob_up_5d`, `position_pct`) in Stage 2 & Stage 3 — zero Stage 1 reasoning strings or other agent identities ever leak.
   - Added **Probabilistic Voting** (`prob_up_5d` 0–100%, `position_pct` -100..+100) and deterministic **Behavioral Metrics** (`opinion_shift_rate`, `herding_rate`, `confidence_polarization`, `stage1_entropy`, `stage3_entropy`).

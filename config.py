@@ -59,6 +59,7 @@ OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "").strip()
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "").strip()
 OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip() or "https://api.openai.com/v1"
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip() or "http://localhost:11434"
+DEFAULT_PROVIDER: str = os.getenv("DEFAULT_PROVIDER", "gemini").strip().lower() or "gemini"
 DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "gemini-3.5-flash-lite").strip() or "gemini-3.5-flash-lite"
 META_JUDGE_MODELS: tuple[str, str, str] = _parse_meta_judge_models(os.getenv("META_JUDGE_MODELS"))
 DEBATE_ROUNDS: int = _parse_int(
@@ -70,9 +71,9 @@ DEBATE_ROUNDS: int = _parse_int(
 LLM_TIMEOUT_SECONDS: float = _parse_float(os.getenv("LLM_TIMEOUT_SECONDS"), default=60.0, minimum=5.0, maximum=300.0)
 LLM_MAX_RETRIES: int = _parse_int(os.getenv("LLM_MAX_RETRIES"), default=2, minimum=0, maximum=5)
 META_JUDGE_TIMEOUT_SECONDS: float = _parse_float(
-    os.getenv("META_JUDGE_TIMEOUT_SECONDS"), default=40.0, minimum=10.0, maximum=180.0
+    os.getenv("META_JUDGE_TIMEOUT_SECONDS"), default=25.0, minimum=10.0, maximum=180.0
 )
-META_JUDGE_MAX_RETRIES: int = _parse_int(os.getenv("META_JUDGE_MAX_RETRIES"), default=1, minimum=0, maximum=3)
+META_JUDGE_MAX_RETRIES: int = _parse_int(os.getenv("META_JUDGE_MAX_RETRIES"), default=0, minimum=0, maximum=3)
 MAX_NEWS_ITEMS: int = _parse_int(os.getenv("MAX_NEWS_ITEMS"), default=15, minimum=1, maximum=30)
 
 
@@ -81,6 +82,11 @@ class Settings:
     """Immutable runtime settings snapshot for a simulation run."""
 
     gemini_api_key: str = GEMINI_API_KEY
+    openai_api_key: str = OPENAI_API_KEY
+    anthropic_api_key: str = ANTHROPIC_API_KEY
+    openai_base_url: str = OPENAI_BASE_URL
+    ollama_base_url: str = OLLAMA_BASE_URL
+    default_provider: str = DEFAULT_PROVIDER
     default_model: str = DEFAULT_MODEL
     meta_judge_models: tuple[str, str, str] = META_JUDGE_MODELS
     debate_rounds: int = DEBATE_ROUNDS
@@ -98,6 +104,11 @@ def get_settings() -> Settings:
     load_dotenv(PROJECT_ROOT / ".env", override=False)
     return Settings(
         gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+        openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", "").strip(),
+        openai_base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").strip() or "https://api.openai.com/v1",
+        ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").strip() or "http://localhost:11434",
+        default_provider=os.getenv("DEFAULT_PROVIDER", "gemini").strip().lower() or "gemini",
         default_model=os.getenv("DEFAULT_MODEL", "gemini-3.5-flash-lite").strip() or "gemini-3.5-flash-lite",
         meta_judge_models=_parse_meta_judge_models(os.getenv("META_JUDGE_MODELS")),
         debate_rounds=_parse_int(
@@ -111,8 +122,8 @@ def get_settings() -> Settings:
         llm_timeout_seconds=_parse_float(os.getenv("LLM_TIMEOUT_SECONDS"), default=60.0, minimum=5.0, maximum=300.0),
         llm_max_retries=_parse_int(os.getenv("LLM_MAX_RETRIES"), default=2, minimum=0, maximum=5),
         meta_judge_timeout_seconds=_parse_float(
-            os.getenv("META_JUDGE_TIMEOUT_SECONDS"), default=40.0, minimum=10.0, maximum=180.0
+            os.getenv("META_JUDGE_TIMEOUT_SECONDS"), default=25.0, minimum=10.0, maximum=180.0
         ),
-        meta_judge_max_retries=_parse_int(os.getenv("META_JUDGE_MAX_RETRIES"), default=1, minimum=0, maximum=3),
+        meta_judge_max_retries=_parse_int(os.getenv("META_JUDGE_MAX_RETRIES"), default=0, minimum=0, maximum=3),
         max_news_items=_parse_int(os.getenv("MAX_NEWS_ITEMS"), default=15, minimum=1, maximum=30),
     )

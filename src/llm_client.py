@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -182,10 +183,36 @@ class StructuredLLMClient(Protocol):
         ...
 
 
+_RETRY_IN_RE = re.compile(r"retry\s+in\s+([0-9]+(?:\.[0-9]+)?)s", re.IGNORECASE)
+_RETRY_DELAY_RE = re.compile(r"['\"]retryDelay['\"]\s*:\s*['\"]([0-9]+(?:\.[0-9]+)?)s['\"]", re.IGNORECASE)
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    if "limit: 0" in msg or "'quotavalue': '0'" in msg or '"quotavalue": "0"' in msg:
+        return False
+    return any(sig in msg for sig in ("429", "resource_exhausted", "resource exhausted", "rate limit"))
+
+
+def _extract_retry_delay_seconds(exc: Exception) -> float | None:
+    """Parse Google Gemini 429 retry hint (e.g. 'Please retry in 3.41s' or 'retryDelay': '3s')."""
+    text = str(exc)
+    for pattern in (_RETRY_IN_RE, _RETRY_DELAY_RE):
+        match = pattern.search(text)
+        if match:
+            try:
+                return max(0.5, min(65.0, float(match.group(1))))
+            except ValueError:
+                pass
+    return None
+
+
 def _is_retryable_error(exc: Exception) -> bool:
     if isinstance(exc, (TimeoutError, asyncio.TimeoutError, ConnectionError)):
         return True
     msg = str(exc).lower()
+    if "limit: 0" in msg or "'quotavalue': '0'" in msg or '"quotavalue": "0"' in msg:
+        return False
     retry_signals = (
         "429",
         "500",
@@ -274,6 +301,14 @@ def _extract_validated_model(response: types.GenerateContentResponse, response_s
     )
 
 
+DEFAULT_GEMINI_FALLBACK_MODELS: tuple[str, ...] = (
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+)
+
+
 class GeminiLLMClient:
     """Production async client over `google-genai` with structured Pydantic output enforcement."""
 
@@ -285,6 +320,7 @@ class GeminiLLMClient:
         model_name: str = DEFAULT_MODEL,
         timeout_seconds: float = LLM_TIMEOUT_SECONDS,
         max_retries: int = LLM_MAX_RETRIES,
+        fallback_models: tuple[str, ...] | None = None,
     ) -> None:
         resolved_key = (api_key if api_key is not None else GEMINI_API_KEY).strip()
         if not resolved_key or resolved_key == "your_gemini_api_key_here":
@@ -295,6 +331,8 @@ class GeminiLLMClient:
         self.model_name = model_name.strip() or DEFAULT_MODEL
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
+        raw_fallbacks = DEFAULT_GEMINI_FALLBACK_MODELS if fallback_models is None else fallback_models
+        self.fallback_models = tuple(m for m in raw_fallbacks if m and m != self.model_name)
         self._client = genai.Client(api_key=resolved_key)
 
     async def generate_structured(
@@ -314,23 +352,44 @@ class GeminiLLMClient:
         )
 
         last_error: Exception | None = None
-        for attempt in range(self.max_retries + 1):
-            try:
-                response = await asyncio.wait_for(
-                    self._client.aio.models.generate_content(
-                        model=self.model_name,
-                        contents=user_prompt,
-                        config=config,
-                    ),
-                    timeout=self.timeout_seconds,
-                )
-                return _extract_validated_model(response, response_schema)
-            except Exception as exc:
-                last_error = exc
-                if attempt >= self.max_retries or not _is_retryable_error(exc):
-                    break
-                delay = (0.75 * (2**attempt)) + random.uniform(0.0, 0.35)
-                await asyncio.sleep(delay)
+        models_to_try = (self.model_name, *self.fallback_models)
+
+        for model_idx, active_model in enumerate(models_to_try):
+            is_primary = model_idx == 0
+            # Primary gets full retries; fallback models get 1 fast retry on 429/503.
+            base_retries = self.max_retries if is_primary else min(1, self.max_retries)
+            max_attempts = (max(base_retries, 3) if is_primary else base_retries) + 1
+
+            for attempt in range(max_attempts):
+                try:
+                    response = await asyncio.wait_for(
+                        self._client.aio.models.generate_content(
+                            model=active_model,
+                            contents=user_prompt,
+                            config=config,
+                        ),
+                        timeout=self.timeout_seconds,
+                    )
+                    return _extract_validated_model(response, response_schema)
+                except Exception as exc:
+                    last_error = exc
+                    is_429 = _is_rate_limit_error(exc)
+                    if not _is_retryable_error(exc):
+                        break
+                    allowed_retries = (max(base_retries, 3) if is_primary else base_retries) if is_429 else base_retries
+                    if attempt >= allowed_retries:
+                        break
+                    if is_429:
+                        server_delay = _extract_retry_delay_seconds(exc)
+                        base_delay = server_delay if server_delay is not None else min(15.0, 4.0 * (attempt + 1))
+                        delay = base_delay + random.uniform(0.6, 1.8)
+                    else:
+                        delay = (0.75 * (2**attempt)) + random.uniform(0.0, 0.35)
+                    await asyncio.sleep(delay)
+
+            # Only fail over to another Gemini Flash model on transient availability/quota/timeout errors.
+            if last_error is None or not _is_retryable_error(last_error):
+                break
 
         raise LLMGenerationError(
             f"Gemini call failed for model '{self.model_name}' "
@@ -598,6 +657,7 @@ def create_llm_client(
     base_url: str | None = None,
     timeout_seconds: float = LLM_TIMEOUT_SECONDS,
     max_retries: int = LLM_MAX_RETRIES,
+    fallback_models: tuple[str, ...] | None = None,
 ) -> GeminiLLMClient | OpenAILLMClient | AnthropicLLMClient | OllamaLLMClient:
     """Instantiate the appropriate structured LLM client for the chosen provider."""
     norm = provider.strip().lower()
@@ -607,6 +667,7 @@ def create_llm_client(
             model_name=model_name,
             timeout_seconds=timeout_seconds,
             max_retries=max_retries,
+            fallback_models=fallback_models,
         )
     if norm == "openai":
         return OpenAILLMClient(

@@ -550,14 +550,27 @@ def test_streamlit_app_boots_replays_and_previews_v21_lab(
     at = AppTest.from_file(str(app_config.PROJECT_ROOT / "app.py"), default_timeout=15).run()
     assert not at.exception
 
-    replay_buttons = [btn for btn in at.sidebar.button if "NVDA" in btn.label]
+    # Verify Tier Slider Slot switches providers cleanly
+    assert len(at.sidebar.select_slider) == 1
+    at.sidebar.select_slider[0].set_value("Ollama · Qwen 4B").run()
+    assert not at.exception
+    at.sidebar.select_slider[0].set_value("Claude · 3.5 Sonnet").run()
+    assert not at.exception
+
+    replay_buttons = [
+        btn for btn in at.sidebar.button if btn.key and btn.key.startswith("hist_") and "NVDA" in btn.label
+    ]
     assert len(replay_buttons) == 1
     replay_buttons[0].click().run()
     assert not at.exception
 
     subheaders = [sub.value for sub in at.subheader]
-    assert "Stage 4 — Parallel Counterfactual Experiment Comparison (v2.1)" in subheaders
-    assert "Stage 5 — 3 Blank Meta-Judges (Option B: Cross-Model Peer Selection)" in subheaders
+    assert "Market Brief" in subheaders
+    assert "Initial Votes" in subheaders
+    assert "Council Debate" in subheaders
+    assert "Final Verdict" in subheaders
+    assert "Experiment Lab" in subheaders
+    assert "Meta-Judges" in subheaders
     assert len(at.dataframe) >= 3
 
 
