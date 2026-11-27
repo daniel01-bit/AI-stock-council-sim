@@ -15,9 +15,11 @@ __pycache__/
 .venv/
 venv/
 
-# Runtime history & scoreboard state (directory tracked via .gitkeep if needed)
+# Runtime history, datasets & calibrator artifacts (directory tracked via .gitkeep if needed)
 data/history/*.json
 data/judge_scoreboard.json
+data/datasets/*.jsonl
+data/calibrator_*.json
 
 # OS / IDE
 .DS_Store
