@@ -1,14 +1,34 @@
-# Stock Council Simulator (v2.1 Behavioral Finance Lab)
+# AI-stock-council-sim (Stock Council Simulator · v2.1 Behavioral Finance Lab)
 
-A Multi-Agent Behavioral Finance Simulator & Research Lab that analyzes equities using **100% recent news + 7-day price change percentage ONLY** — strictly **zero technical indicators** (no RSI, MACD, moving averages, or chart patterns).
+**Language:** **English** | [ภาษาไทย](README.th.md)
 
-Built with Python 3.15, the official `google-genai` SDK (async Pydantic Structured Outputs), `yfinance`, `asyncio`, Streamlit, and `pytest`.
+A standalone **Multi-Agent Behavioral Finance Simulator & Research Lab** that analyzes equities using **100% recent news + 7-day price change percentage ONLY** — strictly **zero technical indicators** (no RSI, MACD, moving averages, or chart patterns).
 
-### What's Included in v2.1.1
-- **4-Stage Information-Asymmetry Pipeline:** Stage 0 Researcher Briefing → Stage 1 Blind Probabilistic Vote (`prob_up_5d`, `position_pct`) → Stage 2 Sequential Fog-of-War Debate (anonymized tally + own numeric prior only) → Stage 3 Secret Final Vote & Behavioral Telemetry (`herding_rate`, `confidence_polarization`, `entropy`).
-- **Stage 4 Parallel Counterfactual Lab (Ablation Study):** Runs 4 controlled branches on the exact same `FactBriefing` (`Single-Agent Baseline`, `Isolated Crowd`, `Fog-of-War Council`, `Full-Herd Social Pressure`).
-- **Stage 5 Cross-Model Meta-Judges (Option B):** 3 character-free neutral evaluators on distinct models (`gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.1-flash-lite`) with Parallel Shadow Scoring, Anti-Self-Vote Peer Selection, and Brier Score tie-breaking.
-- **Forward-Run Paper Evaluator (`T+1D / T+5D / T+10D` vs `SPY`):** Zero look-ahead bias evaluation with idempotent `data/judge_scoreboard.json` tracking and single-pass `yfinance` caching.
+Built with Python 3.15, the official `google-genai` SDK (async Pydantic Structured Outputs) + multi-provider adapters (OpenAI, Anthropic Claude, Local Ollama), `yfinance`, `asyncio`, Streamlit, and `pytest`.
+
+---
+
+## Key Capabilities
+
+- **4-Stage Information-Asymmetry Pipeline (Fog of War vs. God View):**
+  - **Stage 0 (Researcher):** Curates raw `yfinance` news + deterministic 7-day price change % into a clean `FactBriefing` (filters clickbait, duplicates, and off-topic noise).
+  - **Stage 1 (Blind Probabilistic Vote):** 5 investor personas vote concurrently via `asyncio.gather()` emitting `vote`, `confidence`, `prob_up_5d` (0–100%), and `position_pct` (-100 to +100).
+  - **Stage 2 (Fog-of-War Sequential Debate):** Enforces a strict **Anonymization Firewall** — agents see ONLY `FactBriefing` + anonymized Stage 1 tally + their **own** Stage 1 numeric prior (anti-amnesia) + prior debate turns. Other agents' Stage 1 identities and reasoning are structurally blocked.
+  - **Stage 3 (Simultaneous Secret Final Vote & Telemetry):** Concurrent secret final ballots + automated behavioral telemetry (**Opinion Shift Rate**, **Herding Rate**, **Confidence Polarization**, **Vote Entropy**).
+- **Stage 4 · Parallel Counterfactual Experiment Lab (Ablation Study):**
+  - Runs 4 controlled branches on the exact same `FactBriefing`: **Branch A (`Single-Agent Baseline`)**, **Branch B (`Isolated Crowd`)**, **Branch C (`Fog-of-War Council`)**, and **Branch D (`Full-Herd Social Pressure`)**.
+- **Stage 5 · 3 Blank Meta-Judges (Option B: Cross-Model Peer Selection):**
+  - 3 character-free neutral evaluators on distinct models (`gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-3.1-flash-lite`) perform **Parallel Shadow Scoring** (all 3 scored equally to eliminate selection bias) → **Anti-Self-Vote Peer Selection** (with deterministic Brier Score tie-breaking) → **Final Judge Synthesis**.
+- **Multi-Provider AI Tier Slider & 429/503 Resilience:**
+  - Supports **Google Gemini**, **OpenAI**, **Anthropic Claude**, and **Local Ollama** (`qwen3.5:4b`, `qwen2.5:7b`) from the sidebar.
+  - Built-in Gemini Free-Tier `429` `retryDelay` parsing and automatic Gemini Flash failover on transient `503`/`429` spikes (kept isolated from Option B Meta-Judges for fair cross-model benchmarking).
+- **Quick Pick & Hot 7D Behavioral Radar:**
+  - Curated 4-group universe (`AI & Semiconductors`, `Mega-Cap Tech`, `Value, Finance & Crypto`, `Indices & Safe-Haven`) + live **Hot 7D Movers** scanner ranking strictly by `|7D Move %|` (zero technical indicators) with 1-click ticker loading.
+- **Forward-Run Paper Evaluator (`T+1D / T+5D / T+10D` vs `SPY`):**
+  - Zero look-ahead bias evaluation updating realized forward returns, directional Hit Rate, 5D Brier Score, and idempotent `data/judge_scoreboard.json`.
+- **Path A & Path B Research / Training Pipelines:**
+  - **Path A (`scripts/batch_run.py`):** Idempotent daily forward collector with RPM pacing and automatic forward return evaluation.
+  - **Path B (`src/historical_dataset.py`, `scripts/train_calibrator.py`):** Point-in-time masked SEC 8-K Exhibit 99.1 historical evaluation runner, time-ordered L2 Logistic Calibrator (OOS Brier benchmark), and Unsloth ChatML SFT/DPO dataset exporter.
 
 ---
 
@@ -22,7 +42,7 @@ Built with Python 3.15, the official `google-genai` SDK (async Pydantic Structur
 
 ---
 
-## Architecture & Information Asymmetry (Fog of War vs. God View)
+## Architecture & Information Asymmetry
 
 ```mermaid
 flowchart TD
@@ -35,7 +55,7 @@ flowchart TD
     S3 --> LAB
     LAB --> MJ["Stage 5: 3 Blank Meta-Judges (Option B)<br/>Shadow Scoring -> Anti-Self-Vote -> Final Judge"]
     MJ --> STORE["data/history/*.json & judge_scoreboard.json<br/>Full God View Replay + Forward Eval (T+1D/5D/10D)"]
-    STORE --> UI["Streamlit God View Dashboard (app.py)"]
+    STORE --> UI["Streamlit Editorial Dashboard (app.py)"]
 ```
 
 ### Council Roster (6 Agents)
@@ -52,29 +72,39 @@ flowchart TD
 
 ```text
 AI-stock-council-sim/
-├── .env.example              # GEMINI_API_KEY, DEFAULT_MODEL=gemini-3.5-flash-lite, META_JUDGE_MODELS, DEBATE_ROUNDS=2
-├── requirements.txt          # Pinned to exact verified versions on this workstation
-├── config.py                 # Safe env loader (_parse_int/_parse_float) and immutable runtime settings
-├── app.py                    # Streamlit UI (Live Runner + History Replay + God View + Forward Evaluator)
-├── run_dashboard.bat         # One-click Windows launcher for Streamlit
-├── PROJECT_MEMORY.md         # Local project roadmap, guardrails, and current state
-├── CHANGELOG.md              # Engineering changelog & decision record
+├── .env.example                    # GEMINI_API_KEY, DEFAULT_MODEL, META_JUDGE_MODELS, DEBATE_ROUNDS
+├── .streamlit/config.toml          # Editorial light theme palette
+├── requirements.txt                # Verified package versions (Python 3.15)
+├── config.py                       # Safe env loader & immutable Settings snapshot
+├── app.py                          # Streamlit Editorial Dashboard (Live Runner, Radar, Lab, Scoreboard, Replay)
+├── run_dashboard.bat               # One-click Windows launcher
+├── README.md                       # English documentation
+├── README.th.md                    # Thai documentation (ภาษาไทย)
+├── PROJECT_MEMORY.md               # Phase-gated roadmap, guardrails & current state
+├── CHANGELOG.md                    # Engineering changelog & decision record
 ├── data/
-│   └── history/              # Auto-created directory storing SessionRecord JSON replays (gitignored)
+│   └── history/                    # Saved SessionRecord JSON replays (gitignored)
 ├── docs/
-│   └── screenshots/          # Real Streamlit v2.1 God View & Counterfactual Lab screenshots
+│   └── screenshots/                # Live Streamlit v2.1 God View & Lab screenshots
+├── scripts/
+│   ├── batch_run.py                # Path A: Idempotent daily forward auto-collector
+│   └── train_calibrator.py         # Path B: Masked eval runner, L2 Calibrator & Unsloth SFT/DPO exporter
 ├── src/
 │   ├── __init__.py
-│   ├── schemas.py            # Pydantic v2 contracts (FactBriefing, AgentVote, BranchResult, MetaJudgePanelResult, SessionRecord)
-│   ├── llm_client.py         # Async structured output clients (Gemini google-genai + multi-provider) with retries
-│   ├── data_fetcher.py       # yfinance news + 7-day price change % fetcher (zero indicators)
-│   ├── prompts.py            # System prompts + structurally firewalled stage prompt builders
-│   ├── orchestrator.py       # 4-stage pipeline + Parallel Counterfactual Lab + 3-Model Meta-Judges
-│   ├── evaluator.py          # Zero look-ahead Forward-Run Evaluator (T+1D/5D/10D vs SPY) & Judge Scoreboard
-│   ├── preview.py            # In-memory UI Layout Preview builder (no API key required)
-│   └── storage.py            # Atomic JSON save, listing, and replay loading
+│   ├── schemas.py                  # Pydantic v2 contracts (FactBriefing, AgentVote, BranchResult, MetaJudgePanelResult, SessionRecord)
+│   ├── llm_client.py               # Multi-provider async structured output clients (Gemini, OpenAI, Anthropic, Ollama) + 429/503 failover
+│   ├── data_fetcher.py             # yfinance news + 7-day price change % fetcher (zero indicators)
+│   ├── stock_radar.py              # Quick Pick curated groups & Hot 7D Behavioral Movers scanner
+│   ├── prompts.py                  # System prompts & structurally firewalled stage prompt builders
+│   ├── orchestrator.py             # 4-stage pipeline + Parallel Counterfactual Lab + 3-Model Meta-Judges
+│   ├── evaluator.py                # Zero look-ahead Forward-Run Evaluator (T+1D/5D/10D vs SPY) & Judge Scoreboard
+│   ├── historical_dataset.py       # Point-in-time masked SEC 8-K Exhibit 99.1 historical dataset builder
+│   ├── avatars.py                  # Editorial persona visual badges
+│   ├── preview.py                  # In-memory UI Layout Preview builder (no API key required)
+│   └── storage.py                  # Atomic JSON save, listing, and replay loading
 └── tests/
-    └── test_orchestrator.py  # 10 unit tests (firewall, concurrency, v2.1 Lab, Meta-Judges, evaluator cache, AppTest)
+    ├── test_orchestrator.py        # 10 tests: firewall, concurrency, v2.1 Lab, Meta-Judges, evaluator cache, AppTest
+    └── test_training_pipeline.py   # 3 tests: text masking, point-in-time alignment, calibrator & Unsloth export
 ```
 
 ---
@@ -82,21 +112,16 @@ AI-stock-council-sim/
 ## Quick Start
 
 ### 1. Install Dependencies
-Dependencies are pinned in `requirements.txt` to match the verified Python 3.15 environment:
-
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-### 2. Configure Your Gemini API Key
-Copy `.env.example` to `.env` and insert your Gemini API key:
-
+### 2. Configure `.env`
 ```powershell
 Copy-Item .env.example .env
 ```
 
 Edit `.env`:
-
 ```dotenv
 GEMINI_API_KEY=your_gemini_api_key_here
 DEFAULT_MODEL=gemini-3.5-flash-lite
@@ -104,27 +129,44 @@ META_JUDGE_MODELS=gemini-3.6-flash,gemini-3.5-flash,gemini-3.1-flash-lite
 DEBATE_ROUNDS=2
 ```
 
-> You can also paste a temporary session-only API key directly in the Streamlit sidebar without saving it to disk, or click **Preview Dashboard Layout (No API Key)** to inspect the entire v2.1 UI immediately.
+> You can also paste a temporary session-only API key directly in the sidebar, switch to Local Ollama (`qwen3.5:4b`), or click **Preview Layout** to inspect the entire v2.1 UI without an API key.
 
-### 3. Run the Streamlit App
-Use `python -m streamlit` so it runs cleanly even if Python's `Scripts/` folder is not on your Windows `PATH`:
-
+### 3. Launch the Dashboard
+Double-click `run_dashboard.bat` on Windows, or run:
 ```powershell
 python -m streamlit run app.py
 ```
 
-### 4. Run Automated Tests (No API Key Required)
-All 10 unit tests mock LLM calls deterministically:
-
+### 4. Run Automated Tests (13 Tests, No API Key Required)
 ```powershell
 python -m pytest -v
 ```
 
 ---
 
-## How to Swap Models
+## Model Swapping & Multi-Provider Setup
 
-You can switch Gemini models in two ways without touching any code:
+1. **Persistent defaults (`.env`):** Set `DEFAULT_PROVIDER` (`gemini`, `openai`, `anthropic`, `ollama`), `DEFAULT_MODEL`, and `META_JUDGE_MODELS` (3 comma-separated models for Option B).
+2. **Live UI override:** Use the **AI Model Tier Slider** (or check **Custom Model ID**) and expand **Meta-Judge Models** in the sidebar before clicking **Run Simulation**.
 
-1. **Persistent default (`.env`):** Change `DEFAULT_MODEL` (e.g., `gemini-3.5-flash-lite`, `gemini-3.5-flash`, `gemini-3.6-flash`) or `META_JUDGE_MODELS` (3 comma-separated models for Option B) in `.env` and restart Streamlit.
-2. **Per-run override (UI):** Edit **Council Model** or expand **Option B · 3 Meta-Judge Models** in the Streamlit sidebar before clicking **Run Simulation**. The exact model names used are stored inside each `data/history/*.json` record for reproducible replay.
+---
+
+## Path A & Path B Research Pipelines (CLI)
+
+### Path A — Idempotent Daily Forward Auto-Collector
+```powershell
+python scripts/batch_run.py --dry-run
+python scripts/batch_run.py --tickers NVDA,AAPL,MSFT,AMD,TSLA --rounds 1 --lab
+```
+
+### Path B — Masked Historical Evaluation, Statistical Calibrator & Unsloth Export
+```powershell
+# 1. Run resumable masked historical eval (zero look-ahead)
+python scripts/train_calibrator.py --run-eval --limit 30 --rounds 1
+
+# 2. Fit time-ordered L2 Logistic Calibrator & report OOS Brier Score
+python scripts/train_calibrator.py --calibrate
+
+# 3. Export ChatML SFT + DPO datasets for Unsloth (Qwen 4B/7B)
+python scripts/train_calibrator.py --export-unsloth
+```
