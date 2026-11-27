@@ -85,21 +85,21 @@ CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400&display=swap');
 
 :root {
-    --paper: #FAF9F6;
-    --paper-alt: #F3F0EA;
-    --surface: #FFFFFF;
-    --ink: #111827;
-    --ink-muted: #5B6472;
-    --rule: #E2DDD3;
-    --navy: #16243D;
+    --paper: #ECE9E2;
+    --paper-alt: #E4E0D7;
+    --surface: #F5F3EE;
+    --ink: #1C222D;
+    --ink-muted: #5C6370;
+    --rule: #D5CFC4;
+    --navy: #1E3252;
     --forest: #146C43;
-    --forest-bg: #EBF5EF;
-    --ochre: #B45309;
-    --ochre-bg: #FDF4E7;
+    --forest-bg: #E2F0E8;
+    --ochre: #A86416;
+    --ochre-bg: #F6EBDC;
     --oxblood: #9B1C1C;
-    --oxblood-bg: #FCEEEE;
+    --oxblood-bg: #F6E4E4;
     --slate: #475569;
-    --slate-bg: #EEF1F5;
+    --slate-bg: #E5E8EC;
 }
 
 html, body, [class*="css"] {
@@ -109,6 +109,22 @@ html, body, [class*="css"] {
 
 .stApp {
     background-color: var(--paper);
+}
+
+header[data-testid="stHeader"] {
+    background-color: rgba(236, 233, 226, 0.94);
+    border-bottom: 1px solid var(--rule);
+}
+
+.stTextInput input,
+.stSelectbox div[data-baseweb="select"] > div {
+    background-color: var(--surface);
+    border-color: var(--rule);
+}
+
+div[data-testid="stExpander"] {
+    background-color: var(--surface);
+    border-color: var(--rule);
 }
 
 /* Generous top padding so top brand title is never clipped by Streamlit's header */
@@ -349,22 +365,22 @@ section[data-testid="stSidebar"] {
 }
 .verdict-circle-buy {
     background: #146C43;
-    border: 3px solid #FFFFFF;
+    border: 3px solid #F5F3EE;
     outline: 2.5px solid #146C43;
 }
 .verdict-circle-hold {
-    background: #B45309;
-    border: 3px solid #FFFFFF;
-    outline: 2.5px solid #B45309;
+    background: #A86416;
+    border: 3px solid #F5F3EE;
+    outline: 2.5px solid #A86416;
 }
 .verdict-circle-sell {
     background: #9B1C1C;
-    border: 3px solid #FFFFFF;
+    border: 3px solid #F5F3EE;
     outline: 2.5px solid #9B1C1C;
 }
 .verdict-circle-split {
     background: #334155;
-    border: 3px solid #FFFFFF;
+    border: 3px solid #F5F3EE;
     outline: 2.5px solid #334155;
 }
 
@@ -815,133 +831,369 @@ section[data-testid="stSidebar"] {
     font-size: 0.84rem;
     color: #E2E8F0;
 }
+/* Editorial List Card & Dark Ledger Table */
+.editorial-list-card {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 0.95rem 1.15rem;
+    margin-bottom: 0.75rem;
+}
+.editorial-list-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--navy);
+    margin-bottom: 0.55rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--rule);
+}
+.editorial-list-card ul {
+    margin: 0;
+    padding-left: 1.15rem;
+}
+.editorial-list-card li {
+    font-size: 0.88rem;
+    line-height: 1.52;
+    color: var(--ink);
+    margin-bottom: 0.35rem;
+}
+.editorial-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    margin: 0.35rem 0 0.9rem 0;
+}
+.editorial-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.84rem;
+    font-variant-numeric: tabular-nums;
+}
+.editorial-table th {
+    background: var(--paper-alt);
+    color: var(--navy);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 0.68rem 0.85rem;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+}
+.editorial-table td {
+    color: var(--ink);
+    padding: 0.62rem 0.85rem;
+    border-bottom: 1px solid var(--rule);
+    line-height: 1.45;
+}
+.editorial-table tr:last-child td {
+    border-bottom: none;
+}
+.editorial-table tbody tr:hover td {
+    background: rgba(212, 175, 106, 0.06);
+}
 </style>
 """
 
+# Warm Ink & Obsidian (FT Night Edition) — layered charcoal, warm ivory ink, champagne gold accent
 DARK_MODE_CSS = """
 <style>
 :root {
-    --paper: #0E131D;
-    --paper-alt: #141B29;
-    --surface: #1A2334;
-    --ink: #F1F5F9;
-    --ink-muted: #94A3B8;
-    --rule: #2A364B;
-    --navy: #93C5FD;
-    --forest: #34D399;
-    --forest-bg: rgba(20, 108, 67, 0.28);
-    --ochre: #FBBF24;
-    --ochre-bg: rgba(180, 83, 9, 0.28);
-    --oxblood: #F87171;
-    --oxblood-bg: rgba(155, 28, 28, 0.28);
-    --slate: #CBD5E1;
-    --slate-bg: rgba(100, 116, 139, 0.28);
+    --paper: #121316;
+    --paper-alt: #181A1F;
+    --surface: #1F2229;
+    --surface-hover: #272B34;
+    --ink: #E7E4DC;
+    --ink-muted: #9A9FA8;
+    --rule: #2C303A;
+    --navy: #D4AF6A;
+    --forest: #34B37E;
+    --forest-bg: rgba(27, 110, 75, 0.22);
+    --ochre: #E0A44E;
+    --ochre-bg: rgba(168, 100, 22, 0.22);
+    --oxblood: #E06C6E;
+    --oxblood-bg: rgba(158, 42, 43, 0.22);
+    --slate: #B8BFC9;
+    --slate-bg: rgba(100, 110, 125, 0.22);
 }
 
-.stApp, [data-testid="stAppViewContainer"] {
-    background-color: #0E131D !important;
-    color: #F1F5F9 !important;
+.stApp, [data-testid="stAppViewContainer"], .main {
+    background-color: #121316 !important;
+    color: #E7E4DC !important;
 }
 
 header[data-testid="stHeader"] {
-    background-color: rgba(14, 19, 29, 0.92) !important;
-    border-bottom: 1px solid #2A364B;
+    background-color: rgba(18, 19, 22, 0.94) !important;
+    border-bottom: 1px solid #2C303A;
 }
 
 section[data-testid="stSidebar"] {
-    background-color: #141B29 !important;
-    border-right: 1px solid #2A364B !important;
+    background-color: #181A1F !important;
+    border-right: 1px solid #2C303A !important;
 }
 
 section[data-testid="stSidebar"] *,
 .stMarkdown, .stMarkdown p, .stMarkdown li,
 h1, h2, h3, h4, label,
-[data-testid="stCaptionContainer"],
-[data-testid="stMetricValue"],
-[data-testid="stMetricLabel"] {
-    color: #F1F5F9;
+[data-testid="stMetricValue"] {
+    color: #E7E4DC;
 }
 
 [data-testid="stCaptionContainer"] p,
 [data-testid="stMetricLabel"] p {
-    color: #94A3B8 !important;
+    color: #9A9FA8 !important;
 }
 
+/* Explicit Dark Surface & Text Overrides (immune to DOM order) */
+.hero-masthead,
+.step-card,
+.kpi-card,
+.vote-card,
+.debate-entry,
+.briefing-lead,
+.shared-tally-bar,
+.winner-card,
+.model-spec-card,
+.editorial-list-card,
+.editorial-table-wrap {
+    background-color: #1F2229 !important;
+    border-color: #2C303A !important;
+    color: #E7E4DC !important;
+}
+.kpi-card-subtle {
+    background-color: #181A1F !important;
+    border-color: #2C303A !important;
+}
+.hero-masthead,
+.step-card,
+.model-spec-card {
+    border-top-color: #D4AF6A !important;
+}
+.briefing-lead,
+.shared-tally-bar {
+    border-left-color: #D4AF6A !important;
+}
+.app-topbar {
+    border-bottom-color: #D4AF6A !important;
+}
+.sidebar-brand {
+    border-top-color: #D4AF6A !important;
+    border-bottom-color: #2C303A !important;
+}
+.hero-app-title,
+.app-topbar-name,
+.sidebar-brand-title,
+.step-num,
+.sidebar-group-label,
+.shared-tally-title,
+.editorial-list-title {
+    color: #D4AF6A !important;
+}
+.ticker-headline,
+.step-title,
+.kpi-value,
+.kpi-value-sm,
+.persona-name,
+.vote-reasoning,
+.debate-body,
+.winner-title,
+.model-spec-id,
+.shared-tally-numbers,
+.editorial-list-card li,
+.editorial-table td {
+    color: #E7E4DC !important;
+}
+.hero-subtitle,
+.ticker-meta,
+.step-desc,
+.kpi-label,
+.kpi-sub.delta-flat,
+.persona-role,
+.conf-label,
+.vote-stats-line,
+.debate-turn-tag,
+.winner-meta,
+.model-spec-meta,
+.app-topbar-meta,
+.sidebar-brand-sub,
+.verdict-label {
+    color: #9A9FA8 !important;
+}
+.editorial-table th {
+    background-color: #181A1F !important;
+    color: #D4AF6A !important;
+    border-bottom-color: #2C303A !important;
+}
+.editorial-table td {
+    border-bottom-color: #2C303A !important;
+}
+
+/* Smooth Brand & Surface Accents */
 .provider-tag {
-    background: #2563EB;
-    color: #FFFFFF;
+    background: #2C271E !important;
+    color: #E5C88B !important;
+    border: 1px solid rgba(212, 175, 106, 0.35) !important;
+}
+.hero-chip {
+    background: #181A1F !important;
+    color: #D4AF6A !important;
+    border-color: #2C303A !important;
+}
+.shift-tag {
+    background: #181A1F !important;
+    color: #9A9FA8 !important;
+}
+.shift-tag-changed {
+    background: rgba(168, 100, 22, 0.25) !important;
+    color: #E0A44E !important;
+}
+.conf-track {
+    background: #14161B !important;
+}
+.conf-fill {
+    background: #D4AF6A !important;
 }
 
+/* Softened Semantic Fills (low glare, high legibility) */
+.tally-card-buy, .pill-buy {
+    background: #1B6E4B;
+    color: #F3F1EA;
+}
+.tally-card-hold, .pill-hold {
+    background: #A86416;
+    color: #F3F1EA;
+}
+.tally-card-sell, .pill-sell {
+    background: #9E2A2B;
+    color: #F3F1EA;
+}
+.pill-split {
+    background: #3B4252;
+    color: #F3F1EA;
+}
+
+.verdict-circle {
+    color: #F3F1EA;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.42);
+}
 .verdict-circle-buy {
-    border-color: #1A2334;
-    outline-color: #22C55E;
+    background: #1B6E4B;
+    border-color: #1F2229;
+    outline-color: #2A8C62;
 }
 .verdict-circle-hold {
-    border-color: #1A2334;
-    outline-color: #F59E0B;
+    background: #A86416;
+    border-color: #1F2229;
+    outline-color: #C97D28;
 }
 .verdict-circle-sell {
-    border-color: #1A2334;
-    outline-color: #EF4444;
+    background: #9E2A2B;
+    border-color: #1F2229;
+    outline-color: #C03D3F;
 }
 .verdict-circle-split {
-    border-color: #1A2334;
-    outline-color: #64748B;
+    background: #3B4252;
+    border-color: #1F2229;
+    outline-color: #5C667A;
 }
 
-/* Native Streamlit inputs, buttons, containers, tabs, expanders */
+/* Native Streamlit Inputs, Selectbox, Popovers, Expanders, Containers */
 .stTextInput input,
+.stTextInput > div > div,
 .stSelectbox div[data-baseweb="select"] > div {
-    background-color: #1A2334 !important;
-    color: #F1F5F9 !important;
-    border-color: #2A364B !important;
+    background-color: #1F2229 !important;
+    color: #E7E4DC !important;
+    border-color: #2C303A !important;
+}
+.stTextInput input::placeholder {
+    color: #717784 !important;
 }
 
+div[data-baseweb="popover"],
 div[data-baseweb="popover"] ul,
-div[data-baseweb="menu"] {
-    background-color: #1A2334 !important;
-    color: #F1F5F9 !important;
+div[data-baseweb="menu"],
+ul[role="listbox"] {
+    background-color: #1F2229 !important;
+    color: #E7E4DC !important;
+    border-color: #2C303A !important;
+}
+li[role="option"]:hover {
+    background-color: #272B34 !important;
 }
 
 div[data-testid="stExpander"] {
-    background-color: #1A2334 !important;
-    border-color: #2A364B !important;
-    border-radius: 6px;
+    background-color: #1F2229 !important;
+    border: 1px solid #2C303A !important;
+    border-radius: 6px !important;
+}
+div[data-testid="stExpander"] summary,
+div[data-testid="stExpander"] summary p {
+    background-color: #1F2229 !important;
+    color: #E7E4DC !important;
+}
+div[data-testid="stExpanderDetails"] {
+    background-color: #181A1F !important;
+    border-top: 1px solid #2C303A !important;
 }
 
 div[data-testid="stVerticalBlockBorderWrapper"] {
-    background-color: #1A2334 !important;
-    border-color: #2A364B !important;
+    background-color: #1F2229 !important;
+    border-color: #2C303A !important;
 }
 
-.stButton > button[kind="secondary"] {
-    background-color: #1A2334 !important;
-    color: #E2E8F0 !important;
-    border: 1px solid #334155 !important;
+div[data-testid="stAlert"] {
+    background-color: #231F18 !important;
+    color: #E7E4DC !important;
+    border: 1px solid rgba(212, 175, 106, 0.35) !important;
 }
-.stButton > button[kind="secondary"]:hover {
-    background-color: #243047 !important;
-    border-color: #60A5FA !important;
-    color: #FFFFFF !important;
+
+/* Buttons */
+.stButton > button[kind="secondary"],
+.stDownloadButton > button {
+    background-color: #1F2229 !important;
+    color: #E7E4DC !important;
+    border: 1px solid #2C303A !important;
+}
+.stButton > button[kind="secondary"]:hover,
+.stDownloadButton > button:hover {
+    background-color: #272B34 !important;
+    border-color: #D4AF6A !important;
+    color: #F3F1EA !important;
 }
 .stButton > button[kind="primary"] {
-    background-color: #2563EB !important;
-    color: #FFFFFF !important;
-    border: 1px solid #3B82F6 !important;
+    background-color: #B8914B !important;
+    color: #121316 !important;
+    border: 1px solid #D4AF6A !important;
+    font-weight: 600 !important;
 }
 .stButton > button[kind="primary"]:hover {
-    background-color: #1D4ED8 !important;
+    background-color: #D4AF6A !important;
+    color: #121316 !important;
 }
 
+/* Tabs & Sliders */
+.stTabs [data-baseweb="tab-list"] {
+    border-bottom-color: #2C303A !important;
+}
 .stTabs [data-baseweb="tab"] {
-    color: #94A3B8 !important;
+    color: #9A9FA8 !important;
 }
 .stTabs [aria-selected="true"] {
-    color: #93C5FD !important;
+    color: #D4AF6A !important;
+}
+.stTabs [data-baseweb="tab-highlight"] {
+    background-color: #D4AF6A !important;
 }
 
 hr {
-    border-color: #2A364B !important;
+    border-color: #2C303A !important;
 }
 </style>
 """
@@ -1135,6 +1387,53 @@ def _render_debate_turn(turn: DebateTurn) -> None:
     )
 
 
+def _render_editorial_table(rows: list[dict]) -> None:
+    """Render native st.dataframe in Light Mode and a seamless HTML ledger table in Dark Mode (zero white canvas glare)."""
+    if not rows:
+        return
+    if not st.session_state.get("dark_mode", False):
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        return
+    headers = list(rows[0].keys())
+    th_html = "".join(f"<th>{html.escape(str(col))}</th>" for col in headers)
+    tr_html = "".join(
+        "<tr>" + "".join(f"<td>{html.escape(str(row.get(col, '')))}</td>" for col in headers) + "</tr>"
+        for row in rows
+    )
+    st.markdown(
+        _html(
+            f"""
+            <div class="editorial-table-wrap">
+                <table class="editorial-table">
+                    <thead><tr>{th_html}</tr></thead>
+                    <tbody>{tr_html}</tbody>
+                </table>
+            </div>
+            """
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def _render_list_card(title: str, items: list[str], empty_text: str) -> None:
+    if items:
+        li_html = "".join(f"<li>{html.escape(item)}</li>" for item in items)
+        body_html = f"<ul>{li_html}</ul>"
+    else:
+        body_html = f'<div style="font-size:0.84rem; color:var(--ink-muted);">{html.escape(empty_text)}</div>'
+    st.markdown(
+        _html(
+            f"""
+            <div class="editorial-list-card">
+                <div class="editorial-list-title">{html.escape(title)}</div>
+                {body_html}
+            </div>
+            """
+        ),
+        unsafe_allow_html=True,
+    )
+
+
 def _render_scoreboard_table(judges: dict[str, JudgeTrackRecord]) -> None:
     if not judges:
         st.caption("No judge history yet.")
@@ -1155,7 +1454,7 @@ def _render_scoreboard_table(judges: dict[str, JudgeTrackRecord]) -> None:
                 "Final Win Rate": f"{rec.selected_win_rate * 100:.1f}%" if rec.selected_win_rate is not None else "Pending",
             }
         )
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    _render_editorial_table(rows)
 
 
 def _render_session_god_view(record: SessionRecord) -> None:
@@ -1306,30 +1605,11 @@ def _render_session_god_view(record: SessionRecord) -> None:
 
     facts_col, side_col = st.columns([1.35, 1.0])
     with facts_col:
-        with st.container(border=True):
-            st.markdown("**Key Facts**")
-            if briefing.verified_facts:
-                for fact in briefing.verified_facts:
-                    st.markdown(f"- {fact}")
-            else:
-                st.caption("No facts extracted.")
+        _render_list_card("Key Facts", briefing.verified_facts, "No facts extracted.")
 
     with side_col:
-        with st.container(border=True):
-            st.markdown("**Catalysts**")
-            if briefing.key_catalysts:
-                for item in briefing.key_catalysts:
-                    st.markdown(f"- {item}")
-            else:
-                st.caption("None identified.")
-
-        with st.container(border=True):
-            st.markdown("**Risks**")
-            if briefing.key_risks:
-                for item in briefing.key_risks:
-                    st.markdown(f"- {item}")
-            else:
-                st.caption("None identified.")
+        _render_list_card("Catalysts", briefing.key_catalysts, "None identified.")
+        _render_list_card("Risks", briefing.key_risks, "None identified.")
 
     if record.raw_news:
         with st.expander(f"News Sources ({len(record.raw_news)})"):
@@ -1405,7 +1685,7 @@ def _render_session_god_view(record: SessionRecord) -> None:
         }
         for shift in record.opinion_shifts
     ]
-    st.dataframe(pd.DataFrame(shift_rows), width="stretch", hide_index=True)
+    _render_editorial_table(shift_rows)
 
     # 7. Experiment Lab
     if record.counterfactual_branches:
@@ -1426,7 +1706,7 @@ def _render_session_god_view(record: SessionRecord) -> None:
                     "Herding": f"{b_metrics.herding_rate * 100:.0f}%" if b_metrics else "—",
                 }
             )
-        st.dataframe(pd.DataFrame(branch_rows), width="stretch", hide_index=True)
+        _render_editorial_table(branch_rows)
 
         full_herd = next((b for b in record.counterfactual_branches if b.branch_id == "full_herd"), None)
         if full_herd and full_herd.debate_transcript:
@@ -1538,7 +1818,7 @@ def _render_session_god_view(record: SessionRecord) -> None:
                 }
                 for pv in meta_panel.peer_votes
             ]
-            st.dataframe(pd.DataFrame(pv_rows), width="stretch", hide_index=True)
+            _render_editorial_table(pv_rows)
 
     # 9. Forward Results
     if record.forward_eval is not None:
@@ -1761,8 +2041,6 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         dark_mode = st.toggle("Dark Mode", key="dark_mode")
-        if dark_mode:
-            st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 
         # 1. Stock + Unified Compact Quick Pick & Hot 7D Radar
         st.markdown('<div class="sidebar-group-label">Stock</div>', unsafe_allow_html=True)
@@ -2042,6 +2320,10 @@ def main() -> None:
                     st.session_state["active_record"] = pitem["record"]
                     st.session_state["active_filename"] = pitem["key"]
                     st.rerun()
+
+    # Inject Dark Mode CSS in main container AFTER CUSTOM_CSS so it always wins cascade order
+    if dark_mode:
+        st.markdown(DARK_MODE_CSS, unsafe_allow_html=True)
 
     # Layout preview mode (recorded in session History without polluting data/history/)
     if preview_clicked:
