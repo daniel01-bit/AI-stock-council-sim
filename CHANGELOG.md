@@ -77,7 +77,7 @@ All notable additions, structural choices, and environment adaptations for **Sto
 - Added `pytest.ini` (`asyncio_default_fixture_loop_scope = function`) to eliminate `pytest-asyncio 1.5.0` loop-scope deprecation warnings.
 
 ### Key Architectural & Engineering Decisions
-1. **Flat Workspace Root (`c:\Users\ASUS\Desktop\MODEL-2\`) instead of nested `MODEL-2/stock-council-simulator/`:**
+1. **Flat Workspace Root (`./`) instead of nested `stock-council-simulator/`:**
    - Avoids double-nesting, matches existing projects in `home-repo`, and enables running `python -m streamlit run app.py` and `python -m pytest -v` directly from the workspace root.
 2. **Structural Firewall via Function Signatures (`build_debate_prompt`):**
    - Instead of relying solely on prompt wording, `build_debate_prompt()` literally does not accept `stage1_votes: list[AgentVote]` as a parameter — only `FactBriefing`, anonymized `VoteTally`, and `DebateTurn` history.

@@ -1,7 +1,7 @@
 # PROJECT_MEMORY.md — Stock Council Simulator
 
 **Project Name:** `Stock Council Simulator (P5)`  
-**Local Path / Repo:** `c:/Users/ASUS/Desktop/MODEL-2`  
+**Repository:** `https://github.com/daniel01-bit/AI-stock-council-sim`  
 **Current Version / Phase:** `v2.1 (Standalone Behavioral Finance Lab — Live-Verified on AAPL)`  
 **Last Updated:** `2026-11-26`
 
