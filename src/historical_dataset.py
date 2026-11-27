@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import html as html_lib
 import json
 import re
 import time
@@ -74,6 +75,65 @@ KNOWN_CIKS: dict[str, tuple[str, str]] = {
 
 _YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
 _ISO_DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style|ix:hidden)[^>]*>.*?</\1>", re.IGNORECASE | re.DOTALL)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _extract_clean_filing_text(raw_html: str, max_chars: int = 1800) -> str:
+    """Strip HTML/XBRL boilerplate from SEC 8-K / Exhibit 99.1 and extract substantive text."""
+    if not raw_html:
+        return ""
+    cleaned = _SCRIPT_STYLE_RE.sub(" ", raw_html)
+    cleaned = _HTML_TAG_RE.sub(" ", cleaned)
+    cleaned = html_lib.unescape(cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return ""
+
+    # Skip SEC cover-page boilerplate if present by jumping to substantive markers
+    lower = cleaned.lower()
+    for marker in ("item 2.02", "item 7.01", "item 8.01", "item 1.01", "item 5.02", "revenue", "quarter ended", "financial results"):
+        pos = lower.find(marker)
+        if 0 < pos < 2500:
+            cleaned = cleaned[pos:]
+            break
+
+    return cleaned[:max_chars].strip()
+
+
+def _fetch_sec_8k_body_text(cik: str, accession_number: str, primary_doc: str, max_chars: int = 1800) -> str:
+    """Download Exhibit 99.1 (press release) if present, else primary 8-K document text."""
+    cik_num = str(int(cik))
+    acc_nodash = accession_number.replace("-", "")
+    base_url = f"https://www.sec.gov/Archives/edgar/data/{cik_num}/{acc_nodash}"
+    target_doc = primary_doc
+
+    try:
+        idx_req = urllib.request.Request(f"{base_url}/index.json", headers={"User-Agent": SEC_USER_AGENT})
+        with urllib.request.urlopen(idx_req, timeout=12) as resp:
+            idx_data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        items = (idx_data.get("directory") or {}).get("item") or []
+        # Prefer Exhibit 99.1 / press release HTML over the thin 8-K cover sheet
+        for entry in items:
+            fname = str(entry.get("name") or "")
+            low = fname.lower()
+            if low.endswith((".htm", ".html", ".txt")) and ("99" in low or "ex99" in low or "press" in low or "release" in low):
+                if "index" not in low:
+                    target_doc = fname
+                    break
+    except Exception:
+        pass
+
+    if not target_doc:
+        return ""
+
+    try:
+        doc_req = urllib.request.Request(f"{base_url}/{target_doc}", headers={"User-Agent": SEC_USER_AGENT})
+        with urllib.request.urlopen(doc_req, timeout=15) as resp:
+            raw_bytes = resp.read(250_000)  # cap at 250KB to avoid huge financial table downloads
+        return _extract_clean_filing_text(raw_bytes.decode("utf-8", errors="replace"), max_chars=max_chars)
+    except Exception:
+        return ""
 
 
 class HistoricalGroundTruth(BaseModel):
@@ -247,8 +307,9 @@ def _fetch_sec_edgar_8k_events(
     start_date: str,
     end_date: str,
     max_events: int = 25,
+    fetch_body_text: bool = True,
 ) -> tuple[str, list[tuple[str, list[RawNewsItem]]]]:
-    """Fetch historical SEC Form 8-K material corporate events (official, free, point-in-time)."""
+    """Fetch historical SEC Form 8-K material corporate events + Exhibit 99.1 press release text."""
     sym = ticker.strip().upper()
     if sym not in KNOWN_CIKS:
         raise ValueError(f"Ticker '{sym}' not in KNOWN_CIKS ({', '.join(sorted(KNOWN_CIKS))}).")
@@ -263,9 +324,11 @@ def _fetch_sec_edgar_8k_events(
     dates = recent.get("filingDate") or []
     items_list = recent.get("items") or []
     descs = recent.get("primaryDocDescription") or []
+    accessions = recent.get("accessionNumber") or []
+    primary_docs = recent.get("primaryDocument") or []
 
-    grouped: dict[str, list[RawNewsItem]] = defaultdict(list)
-    for form, fdate, items, desc in zip(forms, dates, items_list, descs):
+    candidates: list[tuple[str, list[str], list[str], str, str, str]] = []
+    for form, fdate, items, desc, acc, pdoc in zip(forms, dates, items_list, descs, accessions, primary_docs):
         if form != "8-K":
             continue
         if not (start_date <= fdate <= end_date):
@@ -274,22 +337,39 @@ def _fetch_sec_edgar_8k_events(
         material_labels = [SEC_8K_ITEM_LABELS[c] for c in codes if c in SEC_8K_ITEM_LABELS]
         if not material_labels:
             continue
-        headline = f"{company_name} files Form 8-K: {'; '.join(material_labels[:3])}"
-        summary = (
-            f"Official SEC Form 8-K material disclosure covering items {', '.join(codes)} "
-            f"({desc or 'Current Report'})."
-        )
-        grouped[fdate].append(
-            RawNewsItem(
-                title=headline,
-                publisher="SEC EDGAR (Form 8-K)",
-                published_at=fdate,
-                summary=summary,
-                url="",
-            )
-        )
+        candidates.append((fdate, codes, material_labels, desc or "Current Report", acc, pdoc))
 
-    ordered = sorted(grouped.items(), key=lambda kv: kv[0], reverse=True)[:max_events]
+    # Select up to max_events distinct dates (newest first) BEFORE downloading Exhibit 99.1 bodies
+    grouped_meta: dict[str, list[tuple[list[str], list[str], str, str, str]]] = defaultdict(list)
+    for fdate, codes, labels, desc, acc, pdoc in candidates:
+        grouped_meta[fdate].append((codes, labels, desc, acc, pdoc))
+
+    selected_dates = sorted(grouped_meta.keys(), reverse=True)[:max_events]
+    ordered: list[tuple[str, list[RawNewsItem]]] = []
+
+    for fdate in selected_dates:
+        day_items: list[RawNewsItem] = []
+        for codes, labels, desc, acc, pdoc in grouped_meta[fdate]:
+            headline = f"{company_name} files Form 8-K: {'; '.join(labels[:3])}"
+            body = ""
+            if fetch_body_text and acc:
+                body = _fetch_sec_8k_body_text(cik, acc, pdoc)
+                time.sleep(0.15)  # Polite SEC EDGAR rate limit (<10 req/s)
+            if body:
+                summary = f"SEC Form 8-K (Items {', '.join(codes)}): {body}"
+            else:
+                summary = f"Official SEC Form 8-K material disclosure covering items {', '.join(codes)} ({desc})."
+            day_items.append(
+                RawNewsItem(
+                    title=headline,
+                    publisher="SEC EDGAR (Form 8-K / Exhibit 99.1)",
+                    published_at=fdate,
+                    summary=summary,
+                    url="",
+                )
+            )
+        ordered.append((fdate, day_items))
+
     return company_name, ordered
 
 

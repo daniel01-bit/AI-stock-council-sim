@@ -11,6 +11,7 @@ import pandas as pd
 from scripts.batch_run import already_ran_today
 from scripts.train_calibrator import export_unsloth_datasets, run_level1_calibration
 from src.historical_dataset import (
+    _extract_clean_filing_text,
     build_from_csv,
     build_masked_sample,
     load_samples_jsonl,
@@ -36,6 +37,18 @@ def test_mask_sensitive_text_and_point_in_time_alignment() -> None:
     assert "CORP_1234" in cleaned
     assert "[YEAR]" in cleaned
     assert "[DATE]" in cleaned
+
+    raw_html = (
+        "<html><head><style>body{color:red}</style></head><body>"
+        "<ix:hidden>XBRL_NOISE</ix:hidden>"
+        "UNITED STATES SEC COVER PAGE ... "
+        "<p>Revenue rose 22% YoY to $35.1B, beating consensus; Q4 guidance raised.</p>"
+        "</body></html>"
+    )
+    extracted = _extract_clean_filing_text(raw_html)
+    assert "XBRL_NOISE" not in extracted
+    assert "color:red" not in extracted
+    assert extracted.startswith("Revenue rose 22% YoY")
 
     # 20 business days of synthetic prices: event on day index 8 (2025-02-12)
     dates = pd.bdate_range("2025-02-01", periods=20)
