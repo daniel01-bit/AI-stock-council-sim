@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import math
+import random
 from collections import Counter
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
@@ -59,6 +61,7 @@ from src.schemas import (
     VoteTally,
 )
 from src.storage import save_session
+from src.strategy import build_strategy_ticket
 
 ProgressCallback = Callable[[str, str], None]
 DataFetcherFn = Callable[[str], MarketContext]
@@ -177,12 +180,57 @@ def compute_behavioral_metrics(
     )
 
 
+BLIND_CANDIDATE_ALIASES: tuple[str, ...] = (
+    "Candidate Alpha",
+    "Candidate Beta",
+    "Candidate Gamma",
+    "Candidate Delta",
+)
+
+
+def build_blind_peer_aliases(
+    voter_judge_id: str,
+    ok_shadows: Sequence[MetaJudgeShadowDecision],
+    seed_key: str,
+) -> tuple[list[tuple[str, MetaJudgeShadowDecision]], dict[str, str]]:
+    """Deterministically permute eligible peers into blind aliases per voter to eliminate order/label bias."""
+    eligible = [d for d in ok_shadows if d.judge_id != voter_judge_id]
+    digest = hashlib.sha256(f"{seed_key}:{voter_judge_id}".encode("utf-8")).digest()
+    rng = random.Random(int.from_bytes(digest[:8], "big"))
+    shuffled = list(eligible)
+    rng.shuffle(shuffled)
+    pairs = [(BLIND_CANDIDATE_ALIASES[idx], item) for idx, item in enumerate(shuffled)]
+    alias_to_jid = {alias: item.judge_id for alias, item in pairs}
+    return pairs, alias_to_jid
+
+
+def compute_ensemble_prob_up_5d(
+    ok_shadows: Sequence[MetaJudgeShadowDecision],
+    scoreboard: dict[str, JudgeTrackRecord],
+) -> float | None:
+    """Compute inverse shrunk-Brier weighted 5D probability across all OK Meta-Judges."""
+    valid = [d for d in ok_shadows if d.prob_up_5d is not None]
+    if not valid:
+        return None
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for d in valid:
+        rec = scoreboard.get(d.judge_id)
+        brier = rec.shrunk_brier_5d if (rec and rec.shrunk_brier_5d is not None) else 0.25
+        weight = 1.0 / max(0.05, brier)
+        weighted_sum += weight * float(d.prob_up_5d)
+        total_weight += weight
+    return round(weighted_sum / total_weight, 1) if total_weight > 0 else None
+
+
 def select_peer_winner(
     peer_votes: Sequence[PeerSelectionVote],
     shadow_decisions: Sequence[MetaJudgeShadowDecision],
     scoreboard: dict[str, JudgeTrackRecord],
+    *,
+    seed_key: str = "",
 ) -> tuple[str | None, bool, str | None]:
-    """Resolve peer selection winner while enforcing anti-self-vote and deterministic tie-breaking."""
+    """Resolve peer selection winner with anti-self-vote, shrunk-Brier ranking, and unbiased cold-start rotation."""
     available_ids = [d.judge_id for d in shadow_decisions if d.status == "OK"]
     if not available_ids:
         return None, False, "No Meta-Judges available."
@@ -193,7 +241,6 @@ def select_peer_winner(
     for pv in peer_votes:
         if pv.status != "OK":
             continue
-        # Hard enforcement of anti-self-vote even if LLM ignores prompt instruction.
         if pv.selected_judge_id == pv.voter_judge_id:
             continue
         if pv.selected_judge_id in available_ids:
@@ -210,21 +257,37 @@ def select_peer_winner(
         candidates = available_ids
         tie_reason = "No valid non-self peer votes cast"
 
-    # Deterministic tie-breaker: lowest avg_brier_5d -> highest win_rate -> judge_id order.
-    def _rank_key(jid: str) -> tuple[float, float, str]:
-        rec = scoreboard.get(jid)
-        brier = rec.avg_brier_5d if (rec and rec.avg_brier_5d is not None) else 9.999
-        neg_wr = -(rec.win_rate) if (rec and rec.win_rate is not None) else 1.0
-        return (brier, neg_wr, jid)
-
-    winner = min(candidates, key=_rank_key)
-    rec = scoreboard.get(winner)
-    metric_note = (
-        f"best historical Brier={rec.avg_brier_5d:.3f}"
-        if (rec and rec.avg_brier_5d is not None)
-        else "cold-start deterministic order"
+    # Check if we have real Brier track records to break ties empirically; otherwise use unbiased session-seeded rotation.
+    has_brier = any(
+        scoreboard.get(jid) is not None
+        and (scoreboard[jid].avg_brier_5d is not None or scoreboard[jid].evaluated_runs >= 10)
+        for jid in candidates
     )
-    return winner, True, f"{tie_reason}; resolved via {metric_note}."
+
+    if has_brier:
+        def _rank_key(jid: str) -> tuple[float, float, str]:
+            rec = scoreboard.get(jid)
+            if rec is None:
+                return (9.999, 1.0, jid)
+            brier = rec.shrunk_brier_5d if rec.shrunk_brier_5d is not None else (rec.avg_brier_5d if rec.avg_brier_5d is not None else 9.999)
+            wr = rec.shrunk_win_rate if rec.shrunk_win_rate is not None else (rec.win_rate if rec.win_rate is not None else 0.0)
+            return (brier, -wr, jid)
+
+        winner = min(candidates, key=_rank_key)
+        rec = scoreboard.get(winner)
+        b_val = rec.shrunk_brier_5d if (rec and rec.shrunk_brier_5d is not None) else (rec.avg_brier_5d if rec else None)
+        metric_note = f"best historical Brier={b_val:.3f}" if b_val is not None else "empirical rank"
+        return winner, True, f"{tie_reason}; resolved via {metric_note}."
+
+    # Cold-start unbiased tie-breaker: deterministic session-seeded rotation (never hardcoded to judge_1).
+    sorted_cands = sorted(candidates)
+    if seed_key:
+        digest = hashlib.sha256(seed_key.encode("utf-8")).digest()
+        idx = int.from_bytes(digest[:4], "big") % len(sorted_cands)
+        winner = sorted_cands[idx]
+        return winner, True, f"{tie_reason}; resolved via unbiased cold-start rotation."
+    winner = sorted_cands[0]
+    return winner, True, f"{tie_reason}; resolved via cold-start deterministic order."
 
 
 def build_authoritative_briefing(
@@ -545,13 +608,15 @@ class CouncilOrchestrator:
         briefing: FactBriefing,
         branches: Sequence[BranchResult],
         on_progress: ProgressCallback | None,
+        session_seed: str = "",
     ) -> MetaJudgePanelResult:
-        """Option B: 3 character-free Meta-Judges on distinct models -> Shadow -> Peer Select -> Final Judge."""
+        """Option B (v2.2 De-Biased): Shadow (Steelman) -> Double-Blind Peer Select -> Final & Ensemble."""
         default_models = tuple(c.model_name for c in self.judge_clients.values())
         if len(default_models) != 3:
             default_models = META_JUDGE_MODELS
         scoreboard_obj = load_judge_scoreboard(self.scoreboard_path, default_models=default_models)
         scoreboard_snapshot = scoreboard_obj.judges
+        seed_key = session_seed or f"{briefing.ticker}:{briefing.as_of_utc}"
 
         # Step 4A: Parallel Shadow Scoring across all 3 models (fault-tolerant per model).
         self._notify(
@@ -581,6 +646,7 @@ class CouncilOrchestrator:
                     confidence=out.confidence,
                     prob_up_5d=out.prob_up_5d,
                     position_pct=out.position_pct,
+                    minority_counterpoint=out.minority_counterpoint.strip(),
                     reasoning=out.reasoning,
                 )
             except Exception as exc:
@@ -597,18 +663,24 @@ class CouncilOrchestrator:
             )
         )
         ok_shadows = [d for d in shadow_decisions if d.status == "OK"]
+        ensemble_prob = compute_ensemble_prob_up_5d(ok_shadows, scoreboard_snapshot)
 
-        # Step 4B: Peer Selection (Anti-Self-Vote) among available judges.
+        # Step 4B: Double-Blind Peer Selection (per-voter shuffled blind aliases, model names stripped).
         peer_votes: list[PeerSelectionVote] = []
+        peer_blind_aliases: dict[str, dict[str, str]] = {}
         if len(ok_shadows) >= 2:
             self._notify(
                 on_progress,
                 "Stage 4 · Peer Selection",
-                f"{len(ok_shadows)} Meta-Judges voting on who becomes Final Judge (anti-self-vote)...",
+                f"{len(ok_shadows)} Meta-Judges voting double-blind on Final Judge (anti-self-vote)...",
             )
 
             async def _peer_vote_one(shadow: MetaJudgeShadowDecision) -> PeerSelectionVote:
                 client = self.judge_clients[shadow.judge_id]
+                blind_pairs, alias_to_jid = build_blind_peer_aliases(
+                    shadow.judge_id, ok_shadows, seed_key
+                )
+                peer_blind_aliases[shadow.judge_id] = alias_to_jid
                 try:
                     vote_out = await client.generate_structured(
                         system_prompt=META_JUDGE_BLANK_SYSTEM_PROMPT,
@@ -617,14 +689,23 @@ class CouncilOrchestrator:
                             voter_judge_id=shadow.judge_id,
                             shadow_decisions=shadow_decisions,
                             scoreboard=scoreboard_snapshot,
+                            blind_candidates=blind_pairs,
                         ),
                         response_schema=PeerSelectionVoteOutput,
                         temperature=0.1,
                     )
+                    raw_pick = vote_out.selected_judge_id.strip()
+                    # Map blind alias back to real judge_id (also tolerate direct judge_id in mocks).
+                    resolved_pick = alias_to_jid.get(raw_pick, raw_pick)
+                    if resolved_pick == raw_pick:
+                        for alias, real_jid in alias_to_jid.items():
+                            if alias.lower() in raw_pick.lower():
+                                resolved_pick = real_jid
+                                break
                     return PeerSelectionVote(
                         voter_judge_id=shadow.judge_id,
                         voter_model_name=client.model_name,
-                        selected_judge_id=vote_out.selected_judge_id.strip(),
+                        selected_judge_id=resolved_pick,
                         reasoning=vote_out.reasoning.strip(),
                         status="OK",
                     )
@@ -644,9 +725,10 @@ class CouncilOrchestrator:
             peer_votes=peer_votes,
             shadow_decisions=shadow_decisions,
             scoreboard=scoreboard_snapshot,
+            seed_key=seed_key,
         )
 
-        # Step 4C: Selected Final Judge executes final synthesis.
+        # Step 4C: Selected Final Judge executes final synthesis (model names redacted).
         final_decision: MetaJudgeShadowDecision | None = None
         selected_model_name: str | None = None
         if winner_id is not None and winner_id in self.judge_clients:
@@ -678,10 +760,10 @@ class CouncilOrchestrator:
                     confidence=final_out.confidence,
                     prob_up_5d=final_out.prob_up_5d,
                     position_pct=final_out.position_pct,
+                    minority_counterpoint=final_out.minority_counterpoint.strip(),
                     reasoning=final_out.reasoning,
                 )
             except Exception as exc:
-                # Fallback to winner's already-computed shadow decision if synthesis call fails.
                 fallback = next((s for s in ok_shadows if s.judge_id == winner_id), None)
                 if fallback is not None:
                     final_decision = fallback.model_copy(
@@ -691,11 +773,13 @@ class CouncilOrchestrator:
         return MetaJudgePanelResult(
             shadow_decisions=shadow_decisions,
             peer_votes=peer_votes,
+            peer_blind_aliases=peer_blind_aliases,
             selected_final_judge_id=winner_id,
             selected_final_model_name=selected_model_name,
             tie_breaker_used=tie_used,
             tie_breaker_reason=tie_reason,
             final_decision=final_decision,
+            ensemble_prob_up_5d=ensemble_prob,
             scoreboard_snapshot=scoreboard_snapshot,
         )
 
@@ -788,17 +872,27 @@ class CouncilOrchestrator:
                 full_herd_branch,
             ]
 
+        session_id = uuid4().hex[:8]
         meta_judge_panel: MetaJudgePanelResult | None = None
         if enable_counterfactual_lab and self.judge_clients:
             meta_judge_panel = await self._run_stage4_meta_judges(
                 briefing=briefing,
                 branches=counterfactual_branches,
                 on_progress=on_progress,
+                session_seed=f"{context.ticker}:{session_id}",
             )
 
+        strategy_ticket = build_strategy_ticket(
+            briefing=briefing,
+            stage3_votes=stage3_votes,
+            final_verdict=final_verdict,
+            behavioral_metrics=behavioral_metrics,
+            meta_judge_panel=meta_judge_panel,
+        )
+
         record = SessionRecord(
-            schema_version="2.1",
-            session_id=uuid4().hex[:8],
+            schema_version="2.3",
+            session_id=session_id,
             created_at_utc=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             ticker=context.ticker,
             model_name=self.llm_client.model_name,
@@ -815,6 +909,7 @@ class CouncilOrchestrator:
             behavioral_metrics=behavioral_metrics,
             counterfactual_branches=counterfactual_branches,
             meta_judge_panel=meta_judge_panel,
+            strategy_ticket=strategy_ticket,
         )
 
         if save_to_disk:

@@ -238,6 +238,7 @@ def rebuild_judge_scoreboard_from_history(
     accum: dict[str, dict[str, object]] = {
         f"judge_{idx}": {
             "model_name": model,
+            "attempted_runs": 0,
             "total_runs": 0,
             "evaluated_runs": 0,
             "directional_calls": 0,
@@ -264,12 +265,11 @@ def rebuild_judge_scoreboard_from_history(
             evaluated_session_ids.append(record.session_id)
 
         for shadow in panel.shadow_decisions:
-            if shadow.status != "OK":
-                continue
             slot = accum.setdefault(
                 shadow.judge_id,
                 {
                     "model_name": shadow.model_name,
+                    "attempted_runs": 0,
                     "total_runs": 0,
                     "evaluated_runs": 0,
                     "directional_calls": 0,
@@ -281,8 +281,11 @@ def rebuild_judge_scoreboard_from_history(
                     "selected_wins": 0,
                 },
             )
-            # Keep the most recent model_name observed for this judge slot
             slot["model_name"] = shadow.model_name
+            slot["attempted_runs"] = int(slot["attempted_runs"]) + 1
+            if shadow.status != "OK":
+                continue
+
             slot["total_runs"] = int(slot["total_runs"]) + 1
 
             is_selected = panel.selected_final_judge_id == shadow.judge_id
@@ -307,6 +310,8 @@ def rebuild_judge_scoreboard_from_history(
 
     judges_out: dict[str, JudgeTrackRecord] = {}
     for jid, data in sorted(accum.items()):
+        attempted = int(data["attempted_runs"])
+        ok_runs = int(data["total_runs"])
         dir_calls = int(data["directional_calls"])
         wins = int(data["wins"])
         sel_dir = int(data["selected_dir"])
@@ -314,15 +319,23 @@ def rebuild_judge_scoreboard_from_history(
         briers: list[float] = data["briers"]
         excess_list: list[float] = data["excess"]
 
+        # Bayesian shrinkage priors (Beta(5,5) -> 0.50 win rate; Brier prior = 0.25 with n0 = 10)
+        shrunk_wr = round((wins + 5.0) / (dir_calls + 10.0), 4)
+        shrunk_brier = round((sum(briers) + 2.5) / (len(briers) + 10.0), 4)
+
         judges_out[jid] = JudgeTrackRecord(
             judge_id=jid,
             model_name=str(data["model_name"]),
-            total_runs=int(data["total_runs"]),
+            attempted_runs=attempted,
+            total_runs=ok_runs,
+            uptime_pct=round(ok_runs / attempted, 4) if attempted > 0 else None,
             evaluated_runs=int(data["evaluated_runs"]),
             directional_calls=dir_calls,
             wins=wins,
             win_rate=round(wins / dir_calls, 4) if dir_calls > 0 else None,
+            shrunk_win_rate=shrunk_wr,
             avg_brier_5d=round(sum(briers) / len(briers), 4) if briers else None,
+            shrunk_brier_5d=shrunk_brier,
             avg_excess_return_5d=round(sum(excess_list) / len(excess_list), 2) if excess_list else None,
             times_selected_final_judge=int(data["times_selected"]),
             selected_directional_calls=sel_dir,

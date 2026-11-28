@@ -360,28 +360,58 @@ def build_final_vote_prompt(
 # --- v2.1 Meta-Judge Prompt Builders (Blank / Character-Free) ---
 
 
-def format_judge_scoreboard_block(scoreboard: dict[str, JudgeTrackRecord]) -> str:
-    """Format empirical forward-run track records with explicit sample-size & cold-start context."""
+def format_judge_scoreboard_block(
+    scoreboard: dict[str, JudgeTrackRecord],
+    *,
+    blind_aliases: dict[str, str] | None = None,
+    include_model_names: bool = False,
+) -> str:
+    """Format empirical forward-run track records with Bayesian shrinkage & cold-start protection.
+
+    When `blind_aliases` is provided (Double-Blind Peer Selection), strips ALL model names
+    and raw judge IDs, showing only the permuted blind alias (`Candidate Alpha`, etc.).
+    """
     if not scoreboard:
         return "(No historical forward-run evaluations recorded yet — cold-start regime, n=0.)"
 
     lines = []
     max_n = 0
-    for jid in sorted(scoreboard.keys()):
+    if blind_aliases is not None:
+        ordered_pairs = [(alias, jid) for alias, jid in blind_aliases.items() if jid in scoreboard]
+    else:
+        ordered_pairs = [(jid, jid) for jid in sorted(scoreboard.keys())]
+
+    for display_label, jid in ordered_pairs:
         rec = scoreboard[jid]
         max_n = max(max_n, rec.evaluated_runs)
-        wr = f"{rec.win_rate * 100:.1f}%" if rec.win_rate is not None else "N/A"
-        brier = f"{rec.avg_brier_5d:.3f}" if rec.avg_brier_5d is not None else "N/A"
-        excess = f"{rec.avg_excess_return_5d:+.2f}%" if rec.avg_excess_return_5d is not None else "N/A"
-        lines.append(
-            f"- {rec.judge_id} (model={rec.model_name}): evaluated_n={rec.evaluated_runs}, "
-            f"directional_n={rec.directional_calls}, win_rate={wr}, avg_brier_5d={brier} (lower is better), "
-            f"avg_excess_5d_vs_SPY={excess}, times_picked_final={rec.times_selected_final_judge}"
-        )
+        model_part = f" (model={rec.model_name})" if include_model_names else ""
+        if rec.evaluated_runs < 10:
+            sbrier = f"{rec.shrunk_brier_5d:.3f}" if rec.shrunk_brier_5d is not None else "0.250"
+            lines.append(
+                f"- {display_label}{model_part}: Calibrating (evaluated_n={rec.evaluated_runs}/10), "
+                f"shrunk_brier_5d={sbrier} (prior=0.250)"
+            )
+        else:
+            swr = (
+                f"{rec.shrunk_win_rate * 100:.1f}%"
+                if rec.shrunk_win_rate is not None
+                else (f"{rec.win_rate * 100:.1f}%" if rec.win_rate is not None else "N/A")
+            )
+            sbrier = (
+                f"{rec.shrunk_brier_5d:.3f}"
+                if rec.shrunk_brier_5d is not None
+                else (f"{rec.avg_brier_5d:.3f}" if rec.avg_brier_5d is not None else "N/A")
+            )
+            excess = f"{rec.avg_excess_return_5d:+.2f}%" if rec.avg_excess_return_5d is not None else "N/A"
+            lines.append(
+                f"- {display_label}{model_part}: evaluated_n={rec.evaluated_runs}, "
+                f"shrunk_win_rate={swr}, shrunk_brier_5d={sbrier} (lower is better), "
+                f"avg_excess_5d_vs_SPY={excess}"
+            )
 
     cold_note = (
-        "\nCOLD-START WARNING: evaluated_n < 10. Small-sample win rates have high variance; "
-        "weigh reasoning quality and branch evidence heavily alongside track record."
+        "\nCOLD-START REGIME (evaluated_n < 10): Raw win rates are hidden to prevent small-sample overfitting; "
+        "evaluate strictly on analytical rigor and calibration."
         if max_n < 10
         else ""
     )
@@ -421,13 +451,13 @@ def build_meta_judge_shadow_prompt(
         f"{format_fact_briefing(briefing)}\n\n"
         "=== PARALLEL COUNTERFACTUAL EXPERIMENT BRANCHES ===\n"
         f"{format_branches_summary(branches)}\n\n"
-        "=== HISTORICAL FORWARD-RUN META-JUDGE TRACK RECORD ===\n"
-        f"{format_judge_scoreboard_block(scoreboard)}\n\n"
-        f"TASK (You are neutral evaluator `{own_judge_id}` — independent shadow decision):\n"
-        "Synthesize the Fact Briefing and the behavioral divergence across the parallel branches above "
-        "(e.g., compare Baseline vs. Isolated Crowd vs. Fog-of-War vs. Full-Herd to detect herding or polarization distortion).\n"
-        "Output your independent verdict (BUY, HOLD, or SELL), confidence (1-10), prob_up_5d (0-100%), "
-        "position_pct (-100 to +100), and concise 2-3 sentence analytical reasoning."
+        "=== HISTORICAL FORWARD-RUN META-JUDGE TRACK RECORD (MODEL NAMES REDACTED) ===\n"
+        f"{format_judge_scoreboard_block(scoreboard, include_model_names=False)}\n\n"
+        "TASK (Independent neutral shadow decision):\n"
+        "1. First, form your own view strictly from the Fact Briefing and detect any herding or confidence polarization across branches.\n"
+        "2. ANTI-ANCHORING RULE: Before locking your verdict, write the strongest `minority_counterpoint` against the majority branch.\n"
+        "3. Output your independent verdict (BUY, HOLD, or SELL), confidence (1-10), prob_up_5d (0-100%), "
+        "position_pct (-100 to +100), `minority_counterpoint`, and concise 2-3 sentence analytical reasoning."
     )
 
 
@@ -436,39 +466,43 @@ def build_peer_selection_prompt(
     voter_judge_id: str,
     shadow_decisions: Sequence[MetaJudgeShadowDecision],
     scoreboard: dict[str, JudgeTrackRecord],
+    blind_candidates: Sequence[tuple[str, MetaJudgeShadowDecision]] | None = None,
 ) -> str:
-    """Anti-self-vote peer selection prompt: each judge selects which OTHER judge should make the final call."""
-    eligible_ids = [
-        d.judge_id
-        for d in shadow_decisions
-        if d.status == "OK" and d.judge_id != voter_judge_id
-    ]
+    """Double-blind anti-self-vote peer selection prompt.
+
+    Strips ALL model names and raw judge IDs (`judge_1/2/3`) and presents eligible peers
+    under per-voter shuffled blind aliases (`Candidate Alpha`, `Candidate Beta`, ...).
+    """
+    if blind_candidates is None:
+        aliases = ("Candidate Alpha", "Candidate Beta", "Candidate Gamma", "Candidate Delta")
+        eligible = [d for d in shadow_decisions if d.status == "OK" and d.judge_id != voter_judge_id]
+        blind_candidates = [(aliases[i], d) for i, d in enumerate(eligible)]
+
+    eligible_aliases = [alias for alias, _ in blind_candidates]
+    alias_to_jid = {alias: d.judge_id for alias, d in blind_candidates}
+
     decision_blocks = []
-    for d in shadow_decisions:
-        if d.status != "OK":
-            decision_blocks.append(f"- {d.judge_id}: UNAVAILABLE ({d.error or 'model error'})")
-            continue
-        self_tag = " [YOU — NOT ELIGIBLE FOR SELF-VOTE]" if d.judge_id == voter_judge_id else " [ELIGIBLE]"
+    for alias, d in blind_candidates:
+        counter_line = f"\n  Minority Counterpoint: {d.minority_counterpoint}" if d.minority_counterpoint else ""
         decision_blocks.append(
-            f"- {d.judge_id}{self_tag}: Verdict={d.verdict}, Conf={d.confidence}/10, "
-            f"P(Up 5D)={d.prob_up_5d}%, Pos={d.position_pct:+d}%\n"
+            f"- {alias}: Verdict={d.verdict}, Conf={d.confidence}/10, "
+            f"P(Up 5D)={d.prob_up_5d}%, Pos={d.position_pct:+d}%{counter_line}\n"
             f"  Reasoning: {d.reasoning}"
         )
 
     return (
         f"Ticker: {briefing.ticker} ({briefing.company_name}) | 7D Move: {briefing.price_change_7d_pct:+.2f}%\n\n"
-        "=== HISTORICAL TRACK RECORDS ===\n"
-        f"{format_judge_scoreboard_block(scoreboard)}\n\n"
-        "=== SHADOW DECISIONS FROM ALL META-JUDGES ===\n"
+        "=== BLIND HISTORICAL CALIBRATION (MODEL NAMES & IDENTITIES REDACTED) ===\n"
+        f"{format_judge_scoreboard_block(scoreboard, blind_aliases=alias_to_jid, include_model_names=False)}\n\n"
+        "=== BLIND PEER SHADOW DECISIONS (ORDER RANDOMIZED) ===\n"
         + "\n".join(decision_blocks)
         + "\n\n"
-        f"PEER SELECTION TASK (You are `{voter_judge_id}`):\n"
-        f"Select EXACTLY ONE judge ID from the eligible list {eligible_ids} to act as the Final Judge for this ticker.\n"
+        "DOUBLE-BLIND PEER SELECTION TASK:\n"
+        f"Select EXACTLY ONE candidate label from {eligible_aliases} to act as the Final Judge for this ticker.\n"
         "RULES:\n"
-        f"- You MUST NOT select yourself (`{voter_judge_id}`).\n"
-        "- Base your choice on BOTH empirical historical calibration (Brier score, win rate, sample size) "
-        "AND the analytical rigor of their shadow reasoning above.\n"
-        "- Return `selected_judge_id` matching one of the eligible IDs verbatim and a 1-2 sentence rationale."
+        "- Your own submission is excluded; evaluate ONLY the blind candidates listed above.\n"
+        "- Judge strictly on reasoning rigor, awareness of minority risks, and calibrated track record (when n >= 10).\n"
+        "- Return `selected_judge_id` matching one of the candidate labels verbatim and a 1-2 sentence rationale."
     )
 
 
@@ -479,27 +513,28 @@ def build_final_judge_synthesis_prompt(
     shadow_decisions: Sequence[MetaJudgeShadowDecision],
     scoreboard: dict[str, JudgeTrackRecord],
 ) -> str:
-    """Final synthesis prompt executed ONLY by the peer-selected Final Judge."""
+    """Final synthesis prompt executed ONLY by the peer-selected Final Judge (model names redacted)."""
     shadow_block = "\n".join(
-        f"- {d.judge_id} ({d.model_name}): "
+        f"- Peer {idx}"
+        + (" [YOUR SHADOW SUBMISSION]" if d.judge_id == selected_judge_id else "")
+        + ": "
         + (
             f"Verdict={d.verdict}, Conf={d.confidence}/10, P(Up 5D)={d.prob_up_5d}%, Pos={d.position_pct:+d}% | {d.reasoning}"
             if d.status == "OK"
-            else f"UNAVAILABLE ({d.error})"
+            else "UNAVAILABLE"
         )
-        for d in shadow_decisions
+        for idx, d in enumerate(shadow_decisions, start=1)
     )
 
     return (
         f"{format_fact_briefing(briefing)}\n\n"
         "=== PARALLEL BRANCH SUMMARY ===\n"
         f"{format_branches_summary(branches)}\n\n"
-        "=== HISTORICAL TRACK RECORDS ===\n"
-        f"{format_judge_scoreboard_block(scoreboard)}\n\n"
-        "=== PEER SHADOW DECISIONS ===\n"
+        "=== PEER SHADOW DECISIONS (MODEL NAMES REDACTED) ===\n"
         f"{shadow_block}\n\n"
-        f"FINAL JUDGE MANDATE (You are `{selected_judge_id}`, selected by your peers):\n"
+        "FINAL JUDGE MANDATE (Selected via Double-Blind Peer Review):\n"
         "You hold final decision authority for this session. Weigh your own shadow thesis against your peers' "
-        "arguments and the parallel branch behavioral signals, then issue the definitive Final Verdict "
-        "(BUY, HOLD, or SELL), confidence (1-10), prob_up_5d (0-100%), position_pct (-100 to +100), and concise 2-3 sentence rationale."
+        "arguments and the parallel branch behavioral signals, state the strongest `minority_counterpoint`, "
+        "then issue the definitive Final Verdict (BUY, HOLD, or SELL), confidence (1-10), prob_up_5d (0-100%), "
+        "position_pct (-100 to +100), and concise 2-3 sentence rationale."
     )

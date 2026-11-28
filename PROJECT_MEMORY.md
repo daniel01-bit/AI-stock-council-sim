@@ -2,8 +2,8 @@
 
 **Project Name:** `Stock Council Simulator (P5)`  
 **Repository:** `https://github.com/daniel01-bit/AI-stock-council-sim`  
-**Current Version / Phase:** `v2.1 (Standalone Behavioral Finance Lab — Live-Verified on AAPL)`  
-**Last Updated:** `2026-11-26`
+**Current Version / Phase:** `v2.3 (Stability, De-Biased Meta-Judges & Standalone Strategy — 18/18 Tests Passing)`  
+**Last Updated:** `2026-11-28`
 
 ---
 

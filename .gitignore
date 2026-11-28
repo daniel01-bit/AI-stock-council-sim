@@ -18,6 +18,7 @@ venv/
 # Runtime history, datasets & calibrator artifacts (directory tracked via .gitkeep if needed)
 data/history/*.json
 data/judge_scoreboard.json
+data/paper_portfolio.json
 data/datasets/*.jsonl
 data/calibrator_*.json
 

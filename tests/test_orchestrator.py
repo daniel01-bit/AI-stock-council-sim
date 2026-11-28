@@ -394,10 +394,11 @@ async def test_v21_parallel_lab_3_meta_judges_fault_tolerance_and_forward_eval(t
     assert len(panel.shadow_decisions) == 3
     status_by_id = {d.judge_id: d.status for d in panel.shadow_decisions}
     assert status_by_id == {"judge_1": "OK", "judge_2": "OK", "judge_3": "UNAVAILABLE"}
-    # Both judge_1 and judge_2 voted for each other -> tie-breaker selects judge_1 deterministically.
-    assert panel.selected_final_judge_id == "judge_1"
+    # Both judge_1 and judge_2 voted for each other -> unbiased cold-start tie-breaker picks one of them.
+    assert panel.selected_final_judge_id in ("judge_1", "judge_2")
     assert panel.tie_breaker_used is True
-    assert panel.final_decision is not None and panel.final_decision.verdict == "BUY"
+    expected_verdict = "BUY" if panel.selected_final_judge_id == "judge_1" else "SELL"
+    assert panel.final_decision is not None and panel.final_decision.verdict == expected_verdict
 
     # Forward-Run Evaluation with deterministic synthetic future closes (stock UP +10% in 5D, SPY +2%)
     def fake_close_fetcher(symbol: str, start_date: str) -> pd.Series:

@@ -26,6 +26,7 @@ from src.llm_client import (
     find_default_slot_label,
 )
 from src.orchestrator import CouncilOrchestrator
+from src.paper_portfolio import rebuild_paper_portfolio_from_history
 from src.preview import build_layout_preview_record
 from src.prompts import PERSONA_BY_ID
 from src.schemas import (
@@ -37,6 +38,7 @@ from src.schemas import (
 )
 from src.stock_radar import STOCK_GROUPS, HotRadarRow, scan_hot_7d_movers
 from src.storage import list_sessions, load_session
+from src.strategy import evaluate_record_strategy
 
 APP_NAME = "AI-council-sim"
 
@@ -1441,20 +1443,85 @@ def _render_scoreboard_table(judges: dict[str, JudgeTrackRecord]) -> None:
     rows = []
     for jid in sorted(judges.keys()):
         rec = judges[jid]
+        uptime_txt = (
+            f"{rec.uptime_pct * 100:.0f}% ({rec.total_runs}/{rec.attempted_runs})"
+            if rec.uptime_pct is not None and rec.attempted_runs > 0
+            else f"{rec.total_runs} OK"
+        )
         rows.append(
             {
                 "Judge": judge_display_name(rec.judge_id),
                 "Model": rec.model_name,
-                "Runs": rec.total_runs,
+                "Uptime": uptime_txt,
                 "5D Checked": rec.evaluated_runs,
                 "Win Rate": f"{rec.win_rate * 100:.1f}%" if rec.win_rate is not None else "Pending",
-                "Avg Brier": f"{rec.avg_brier_5d:.3f}" if rec.avg_brier_5d is not None else "Pending",
+                "Shrunk Brier": f"{rec.shrunk_brier_5d:.3f}" if rec.shrunk_brier_5d is not None else "0.250",
                 "Excess vs SPY": f"{rec.avg_excess_return_5d:+.2f}%" if rec.avg_excess_return_5d is not None else "Pending",
                 "Picked Final": rec.times_selected_final_judge,
-                "Final Win Rate": f"{rec.selected_win_rate * 100:.1f}%" if rec.selected_win_rate is not None else "Pending",
             }
         )
     _render_editorial_table(rows)
+
+
+def _render_strategy_and_paper_portfolio(active_record: SessionRecord | None) -> None:
+    """Render v2.3 Standalone Event-Driven Strategy Ticket and T+5D Paper Portfolio Ledger."""
+    if active_record is not None:
+        ticket = active_record.strategy_ticket or evaluate_record_strategy(active_record)
+        st.divider()
+        st.subheader("Standalone Strategy Ticket (T+5D Behavioral Mispricing)")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Action", ticket.action)
+        c2.metric("Allocation", f"{ticket.alloc_pct:.1f}%", delta="Max 25% cap")
+        c3.metric("Effective P(Up 5D)", f"{ticket.effective_prob_up_5d:.1f}%", delta=ticket.prob_source)
+        ens_txt = (
+            f"{active_record.meta_judge_panel.ensemble_prob_up_5d:.1f}%"
+            if (active_record.meta_judge_panel and active_record.meta_judge_panel.ensemble_prob_up_5d is not None)
+            else "N/A"
+        )
+        c4.metric("De-Biased Ensemble", ens_txt, delta="Anti-FOMO" if ticket.anti_fomo_divergence else "Aligned")
+
+        _render_list_card(
+            "Deterministic Strategy Gate Audit",
+            ticket.gate_notes,
+            "No gate audit notes.",
+        )
+
+    st.divider()
+    st.subheader("Standalone Paper Portfolio Ledger (T+5D vs SPY)")
+    portfolio = rebuild_paper_portfolio_from_history(history_dir=config.HISTORY_DIR)
+    p1, p2, p3, p4, p5 = st.columns(5)
+    p1.metric("Actionable / Total", f"{portfolio.actionable_trades} / {portfolio.total_sessions}")
+    p2.metric("Abstained (NO TRADE)", portfolio.abstained_sessions)
+    p3.metric("Settled (T+5D)", portfolio.settled_trades, delta=f"{portfolio.open_trades} open")
+    p4.metric(
+        "Win Rate / PF",
+        f"{portfolio.win_rate * 100:.0f}%" if portfolio.win_rate is not None else "Pending",
+        delta=f"PF {portfolio.profit_factor:.2f}" if portfolio.profit_factor is not None else "Awaiting T+5D",
+    )
+    p5.metric(
+        "Cum Return / MaxDD",
+        f"{portfolio.cumulative_portfolio_return_pct:+.2f}%",
+        delta=f"DD {portfolio.max_drawdown_pct:.2f}%",
+    )
+
+    if portfolio.trades:
+        ledger_rows = [
+            {
+                "Date": t.entry_date,
+                "Ticker": t.ticker,
+                "Action": t.action,
+                "Alloc": f"{t.alloc_pct:.1f}%",
+                "P(Up 5D)": f"{t.effective_prob_up_5d:.1f}%",
+                "Status": t.status,
+                "5D Return": f"{t.strategy_return_5d_pct:+.2f}%" if t.strategy_return_5d_pct is not None else "Pending",
+                "SPY 5D": f"{t.spy_return_5d_pct:+.2f}%" if t.spy_return_5d_pct is not None else "Pending",
+                "Port PnL": f"{t.portfolio_pnl_pct:+.2f}%" if t.portfolio_pnl_pct is not None else "Pending",
+            }
+            for t in portfolio.trades[:15]
+        ]
+        _render_editorial_table(ledger_rows)
+    else:
+        st.caption("No recorded sessions in `data/history/` yet.")
 
 
 def _render_session_god_view(record: SessionRecord) -> None:
@@ -2450,6 +2517,7 @@ def main() -> None:
         st.subheader("Judge Scoreboard")
         scoreboard = load_judge_scoreboard(config.JUDGE_SCOREBOARD_PATH, default_models=judge_models)
         _render_scoreboard_table(scoreboard.judges)
+        _render_strategy_and_paper_portfolio(None)
 
         if st.button("Open Preview", type="primary"):
             preview_rec = build_layout_preview_record(
@@ -2462,6 +2530,7 @@ def main() -> None:
             st.rerun()
     else:
         _render_session_god_view(active_record)
+        _render_strategy_and_paper_portfolio(active_record)
         st.divider()
         st.subheader("Judge Scoreboard")
         scoreboard = load_judge_scoreboard(config.JUDGE_SCOREBOARD_PATH, default_models=judge_models)

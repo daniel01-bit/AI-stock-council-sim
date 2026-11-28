@@ -18,9 +18,9 @@ JUDGE_SCOREBOARD_PATH = DATA_DIR / "judge_scoreboard.json"
 MIN_DEBATE_ROUNDS = 1
 MAX_DEBATE_ROUNDS = 3
 DEFAULT_META_JUDGE_MODELS: tuple[str, str, str] = (
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
+    "gemini-3.6-flash",
 )
 
 
@@ -71,9 +71,15 @@ DEBATE_ROUNDS: int = _parse_int(
 LLM_TIMEOUT_SECONDS: float = _parse_float(os.getenv("LLM_TIMEOUT_SECONDS"), default=60.0, minimum=5.0, maximum=300.0)
 LLM_MAX_RETRIES: int = _parse_int(os.getenv("LLM_MAX_RETRIES"), default=2, minimum=0, maximum=5)
 META_JUDGE_TIMEOUT_SECONDS: float = _parse_float(
-    os.getenv("META_JUDGE_TIMEOUT_SECONDS"), default=25.0, minimum=10.0, maximum=180.0
+    os.getenv("META_JUDGE_TIMEOUT_SECONDS"), default=30.0, minimum=10.0, maximum=180.0
 )
-META_JUDGE_MAX_RETRIES: int = _parse_int(os.getenv("META_JUDGE_MAX_RETRIES"), default=0, minimum=0, maximum=3)
+META_JUDGE_MAX_RETRIES: int = _parse_int(os.getenv("META_JUDGE_MAX_RETRIES"), default=1, minimum=0, maximum=3)
+GEMINI_MAX_CONCURRENT_PER_MODEL: int = _parse_int(
+    os.getenv("GEMINI_MAX_CONCURRENT_PER_MODEL"), default=5, minimum=1, maximum=20
+)
+GEMINI_MIN_CALL_INTERVAL_SEC: float = _parse_float(
+    os.getenv("GEMINI_MIN_CALL_INTERVAL_SEC"), default=0.0, minimum=0.0, maximum=10.0
+)
 MAX_NEWS_ITEMS: int = _parse_int(os.getenv("MAX_NEWS_ITEMS"), default=15, minimum=1, maximum=30)
 
 
@@ -122,8 +128,8 @@ def get_settings() -> Settings:
         llm_timeout_seconds=_parse_float(os.getenv("LLM_TIMEOUT_SECONDS"), default=60.0, minimum=5.0, maximum=300.0),
         llm_max_retries=_parse_int(os.getenv("LLM_MAX_RETRIES"), default=2, minimum=0, maximum=5),
         meta_judge_timeout_seconds=_parse_float(
-            os.getenv("META_JUDGE_TIMEOUT_SECONDS"), default=25.0, minimum=10.0, maximum=180.0
+            os.getenv("META_JUDGE_TIMEOUT_SECONDS"), default=30.0, minimum=10.0, maximum=180.0
         ),
-        meta_judge_max_retries=_parse_int(os.getenv("META_JUDGE_MAX_RETRIES"), default=0, minimum=0, maximum=3),
+        meta_judge_max_retries=_parse_int(os.getenv("META_JUDGE_MAX_RETRIES"), default=1, minimum=0, maximum=3),
         max_news_items=_parse_int(os.getenv("MAX_NEWS_ITEMS"), default=15, minimum=1, maximum=30),
     )

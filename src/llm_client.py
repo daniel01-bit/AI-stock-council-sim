@@ -11,6 +11,7 @@ import asyncio
 import json
 import random
 import re
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -24,6 +25,8 @@ from config import (
     ANTHROPIC_API_KEY,
     DEFAULT_MODEL,
     GEMINI_API_KEY,
+    GEMINI_MAX_CONCURRENT_PER_MODEL,
+    GEMINI_MIN_CALL_INTERVAL_SEC,
     LLM_MAX_RETRIES,
     LLM_TIMEOUT_SECONDS,
     OLLAMA_BASE_URL,
@@ -333,7 +336,24 @@ class GeminiLLMClient:
         self.max_retries = max_retries
         raw_fallbacks = DEFAULT_GEMINI_FALLBACK_MODELS if fallback_models is None else fallback_models
         self.fallback_models = tuple(m for m in raw_fallbacks if m and m != self.model_name)
+        self._max_concurrent = max(1, GEMINI_MAX_CONCURRENT_PER_MODEL)
+        self._min_call_interval = max(0.0, GEMINI_MIN_CALL_INTERVAL_SEC)
+        self._semaphore: asyncio.Semaphore | None = None
+        self._pace_lock: asyncio.Lock | None = None
+        self._last_call_monotonic: float = 0.0
         self._client = genai.Client(api_key=resolved_key)
+
+    async def _pace_call(self) -> None:
+        if self._min_call_interval <= 0.0:
+            return
+        if self._pace_lock is None:
+            self._pace_lock = asyncio.Lock()
+        async with self._pace_lock:
+            now = time.monotonic()
+            wait = self._min_call_interval - (now - self._last_call_monotonic)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_call_monotonic = time.monotonic()
 
     async def generate_structured(
         self,
@@ -362,14 +382,18 @@ class GeminiLLMClient:
 
             for attempt in range(max_attempts):
                 try:
-                    response = await asyncio.wait_for(
-                        self._client.aio.models.generate_content(
-                            model=active_model,
-                            contents=user_prompt,
-                            config=config,
-                        ),
-                        timeout=self.timeout_seconds,
-                    )
+                    if self._semaphore is None:
+                        self._semaphore = asyncio.Semaphore(self._max_concurrent)
+                    async with self._semaphore:
+                        await self._pace_call()
+                        response = await asyncio.wait_for(
+                            self._client.aio.models.generate_content(
+                                model=active_model,
+                                contents=user_prompt,
+                                config=config,
+                            ),
+                            timeout=self.timeout_seconds,
+                        )
                     return _extract_validated_model(response, response_schema)
                 except Exception as exc:
                     last_error = exc

@@ -237,6 +237,10 @@ class MetaJudgeDecisionOutput(BaseModel):
     confidence: int = Field(ge=1, le=10)
     prob_up_5d: int = Field(ge=0, le=100)
     position_pct: int = Field(ge=-100, le=100)
+    minority_counterpoint: str = Field(
+        default="",
+        description="Strongest counter-argument against the majority branch before locking your verdict.",
+    )
     reasoning: str = Field(min_length=1)
 
     @field_validator("reasoning")
@@ -259,6 +263,7 @@ class MetaJudgeShadowDecision(BaseModel):
     confidence: int | None = Field(default=None, ge=1, le=10)
     prob_up_5d: int | None = Field(default=None, ge=0, le=100)
     position_pct: int | None = Field(default=None, ge=-100, le=100)
+    minority_counterpoint: str = ""
     reasoning: str = ""
 
 
@@ -285,12 +290,16 @@ class JudgeTrackRecord(BaseModel):
 
     judge_id: str
     model_name: str
+    attempted_runs: int = 0
     total_runs: int = 0
+    uptime_pct: float | None = None
     evaluated_runs: int = 0
     directional_calls: int = 0
     wins: int = 0
     win_rate: float | None = None
+    shrunk_win_rate: float | None = None
     avg_brier_5d: float | None = None
+    shrunk_brier_5d: float | None = None
     avg_excess_return_5d: float | None = None
     times_selected_final_judge: int = 0
     selected_directional_calls: int = 0
@@ -309,16 +318,34 @@ class JudgeScoreboard(BaseModel):
 
 
 class MetaJudgePanelResult(BaseModel):
-    """Complete v2.1 Meta-Judge panel outcome: Shadow Decisions -> Peer Selection -> Final Judge."""
+    """Complete v2.2 de-biased Meta-Judge panel outcome: Shadow -> Double-Blind Peer Select -> Final & Ensemble."""
 
     shadow_decisions: list[MetaJudgeShadowDecision] = Field(default_factory=list)
     peer_votes: list[PeerSelectionVote] = Field(default_factory=list)
+    peer_blind_aliases: dict[str, dict[str, str]] = Field(default_factory=dict)
     selected_final_judge_id: str | None = None
     selected_final_model_name: str | None = None
     tie_breaker_used: bool = False
     tie_breaker_reason: str | None = None
     final_decision: MetaJudgeShadowDecision | None = None
+    ensemble_prob_up_5d: float | None = None
     scoreboard_snapshot: dict[str, JudgeTrackRecord] = Field(default_factory=dict)
+
+
+class StrategyTicket(BaseModel):
+    """Standalone Event-Driven Behavioral Mispricing trade plan (v2.3)."""
+
+    action: Literal["LONG", "SHORT", "NO TRADE"] = "NO TRADE"
+    horizon_days: int = Field(default=5, ge=1)
+    alloc_pct: float = Field(default=0.0, ge=0.0, le=25.0)
+    effective_prob_up_5d: float = Field(default=50.0, ge=0.0, le=100.0)
+    prob_source: str = "council_stage3"
+    event_trigger_passed: bool = False
+    edge_gate_passed: bool = False
+    consensus_gate_passed: bool = False
+    polarization_gate_passed: bool = True
+    anti_fomo_divergence: bool = False
+    gate_notes: list[str] = Field(default_factory=list)
 
 
 # --- v2.0 Forward-Run Paper Evaluation (Zero Look-Ahead Bias) ---
@@ -383,6 +410,7 @@ class SessionRecord(BaseModel):
     behavioral_metrics: BehavioralMetrics | None = None
     counterfactual_branches: list[BranchResult] = Field(default_factory=list)
     meta_judge_panel: MetaJudgePanelResult | None = None
+    strategy_ticket: StrategyTicket | None = None
     forward_eval: ForwardEvaluation | None = None
 
 
